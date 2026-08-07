@@ -9,14 +9,7 @@ from loguru import logger
 from omegaconf import DictConfig
 
 from .config import validate_settings
-from .fit import (
-    load_palette,
-    match_families,
-    pack_ramps,
-    palette_auto_config,
-    remap_families_and_tiers,
-    structure_palette_ramps,
-)
+from .fit import load_palette, palette_auto_config, structure_palette_ramps
 from .perceive import perceive
 from .render import render
 from .structure import structure
@@ -28,10 +21,9 @@ def _run_pipeline(
     """perceive → structure → render，返回 (final_bgr, alpha_down)。"""
     debug_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── 调色盘预处理：必须在 perceive 之前，因为要据此设置色相/阶梯参数 ──
-    palette_ramps = None
-    resolved_groups: int = cfg.perceive.requested_groups
-    resolved_steps: int = cfg.perceive.ramp_steps
+    p = cfg.perceive
+    resolved_groups = p.requested_groups
+    resolved_steps = p.ramp_steps
 
     if cfg.palette:
         palette_bgr = load_palette(hydra.utils.to_absolute_path(cfg.palette))
@@ -46,19 +38,15 @@ def _run_pipeline(
             len(palette_ramps),
             len(palette_bgr),
         )
-
-        auto_groups, auto_steps = palette_auto_config(
+        resolved_groups, resolved_steps = palette_auto_config(
             palette_ramps, auto_chroma_floor=f.auto_chroma_floor
         )
-        resolved_groups = auto_groups
-        resolved_steps = auto_steps
         logger.info(
             "palette: auto-config requested_groups={} ramp_steps={}",
-            auto_groups,
-            auto_steps,
+            resolved_groups,
+            resolved_steps,
         )
 
-    p = cfg.perceive
     perceived = perceive(
         bgra,
         denoise_d=p.denoise_d,
@@ -120,39 +108,7 @@ def _run_pipeline(
         struct["small_cleanup_applied"],
     )
 
-    # ── 套用目标调色盘 ──
-    if palette_ramps is not None:
-        family_mapping = match_families(
-            perceived["hue_directions_ab"],
-            perceived["ramp_l"],
-            perceived["ramps_bgr"],
-            palette_ramps,
-        )
-        logger.info(
-            "palette: family mapping → {}",
-            {i: int(t) for i, t in enumerate(family_mapping)},
-        )
-
-        target_ramps_bgr, target_ramp_l, target_steps = pack_ramps(palette_ramps)
-
-        new_family, new_tier = remap_families_and_tiers(
-            struct["family_down"],
-            struct["tier_down"],
-            struct["alpha_down"],
-            struct["L_down"],
-            perceived["ramp_l"],
-            target_ramp_l,
-            target_steps,
-            family_mapping,
-        )
-
-        perceived["ramps_bgr"] = target_ramps_bgr
-        perceived["ramp_l"] = target_ramp_l
-        struct["family_down"] = new_family
-        struct["tier_down"] = new_tier
-        steps_per_family = target_steps
-    else:
-        steps_per_family = np.full(F_src, resolved_steps, dtype=np.int32)
+    steps_per_family = np.full(F_src, resolved_steps, dtype=np.int32)
 
     r = cfg.render
     final_bgr, _meta = render(
