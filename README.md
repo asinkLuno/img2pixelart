@@ -26,7 +26,7 @@ uv sync
 ### 单张转换
 
 ```bash
-img2pixelart img=tests/apple.jpg size=96
+img2pixelart img=docs/assets/banana_orig.png size=96
 ```
 
 输出在当前目录的 `result.png`。
@@ -36,8 +36,8 @@ img2pixelart img=tests/apple.jpg size=96
 去掉图片四周空白区域：
 
 ```bash
-img2pixelart crop-padding tests/apple.jpg
-# → tests/apple_no_padding.jpg
+img2pixelart crop-padding docs/assets/banana_orig.png
+# → docs/assets/banana_no_padding.png
 ```
 
 ### 参数扫网（multirun）
@@ -47,7 +47,7 @@ img2pixelart crop-padding tests/apple.jpg
 ```bash
 # 渐变层次 × 抖动风格 × 描边，81 种组合
 img2pixelart -m \
-  img=tests/apple.jpg \
+  img=docs/assets/banana_orig.png \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
@@ -61,7 +61,7 @@ img2pixelart -m \
 
 ```bash
 img2pixelart -m \
-  img=tests/apple.jpg \
+  img=docs/assets/banana_orig.png \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
