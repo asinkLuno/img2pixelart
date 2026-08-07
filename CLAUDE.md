@@ -29,11 +29,11 @@ If either command reports errors, fix them and re-run **both** checks until they
 
 All configurable parameters **must be provided through `hydra-core` configuration**.
 
-* Do **not** define default values for configurable parameters in application code.
-* Do **not** add fallback values when reading configuration.
-* Do **not** duplicate configuration values between Python code and Hydra configuration files.
-* Required parameters must be explicitly defined in the Hydra configuration.
-* Pass configuration values explicitly from Hydra into the components that need them.
+- Do **not** define default values for configurable parameters in application code.
+- Do **not** add fallback values when reading configuration.
+- Do **not** duplicate configuration values between Python code and Hydra configuration files.
+- Required parameters must be explicitly defined in the Hydra configuration.
+- Pass configuration values explicitly from Hydra into the components that need them.
 
 Avoid patterns such as:
 

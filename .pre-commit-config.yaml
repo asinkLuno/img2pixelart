@@ -1,0 +1,58 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: ruff check --fix --exit-non-zero-on-fix
+        language: system
+        types: [python]
+
+      - id: ruff-format
+        name: ruff-format
+        entry: ruff format
+        language: system
+        types: [python]
+
+      - id: ty
+        name: ty
+        entry: ty check
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: vulture
+        name: vulture
+        entry: vulture
+        args:
+          [
+            "./",
+            "--min-confidence",
+            "80",
+            "--exclude",
+            ".venv",
+            "--ignore-names",
+            "env_settings,dotenv_settings,file_secret_settings,fixture_*",
+          ]
+        language: system
+        pass_filenames: false
+
+      - id: radon
+        name: radon
+        entry: radon
+        args: ["cc", "./img2pixelart", "--min=C"]
+        language: system
+        pass_filenames: false
+
+      - id: mdformat
+        name: mdformat
+        entry: mdformat
+        language: system
+        types: [markdown]

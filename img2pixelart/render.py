@@ -28,6 +28,82 @@ BAYER_4X4: FloatArray = (
 )
 
 
+# ── 微图案字典：4×4 二值图案，coverage 0/16 .. 16/16 ──
+
+
+def _make_patterns(pixel_order: np.ndarray) -> np.ndarray:
+    """按给定的像素访问顺序生成 17 个 4×4 二值图案。
+
+    pixel_order: (16, 2) 数组，按优先级排列的 (row, col) 位置。
+    返回 (17, 4, 4) bool 数组，patterns[k] 恰好有 k 个 True。
+    """
+    patterns = np.zeros((17, 4, 4), dtype=bool)
+    for k in range(1, 17):
+        for i in range(k):
+            r, c = pixel_order[i]
+            patterns[k, r, c] = True
+    return patterns
+
+
+def _bayer_order() -> np.ndarray:
+    """Bayer 矩阵从小到大排序的像素访问顺序。"""
+    flat_order = np.argsort(BAYER_4X4.ravel())
+    return np.stack([flat_order // 4, flat_order % 4], axis=1)
+
+
+# 对角线扫描顺序
+_DIAG_ORDER: np.ndarray = np.array(
+    [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [2, 0],
+        [1, 1],
+        [0, 2],
+        [3, 0],
+        [2, 1],
+        [1, 2],
+        [0, 3],
+        [3, 1],
+        [2, 2],
+        [1, 3],
+        [3, 2],
+        [2, 3],
+        [3, 3],
+    ],
+    dtype=np.int16,
+)
+
+# 聚类顺序（中心向外扩散）
+_CLUSTER_ORDER: np.ndarray = np.array(
+    [
+        [1, 1],
+        [1, 2],
+        [2, 1],
+        [2, 2],
+        [0, 1],
+        [0, 2],
+        [3, 1],
+        [3, 2],
+        [1, 0],
+        [1, 3],
+        [2, 0],
+        [2, 3],
+        [0, 0],
+        [0, 3],
+        [3, 0],
+        [3, 3],
+    ],
+    dtype=np.int16,
+)
+
+PATTERNS: dict[str, np.ndarray] = {
+    "ordered": _make_patterns(_bayer_order()),
+    "diagonal": _make_patterns(_DIAG_ORDER),
+    "clustered": _make_patterns(_CLUSTER_ORDER),
+}
+
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
@@ -151,6 +227,41 @@ def _render_floyd(
     return bgr.astype(np.float32), chosen
 
 
+def _render_pattern(
+    positions: FloatArray,
+    families: LabelArray,
+    ramps: FloatArray,
+    mask: BoolArray,
+    pattern_set: np.ndarray,
+) -> tuple[FloatArray, LabelArray]:
+    """微图案抖动：用 4×4 图案字典在相邻两档之间选择。
+
+    每个像素根据连续位置的小数部分量化到 0/16..16/16 覆盖率，
+    再查对应图案决定使用低档还是高档颜色。图案按世界坐标平铺。
+    """
+    h, w = positions.shape
+    low = np.floor(positions).astype(np.int16)
+    high = np.minimum(low + 1, ramps.shape[1] - 1)
+    fraction = positions - low
+    levels = np.clip(np.round(fraction * 16).astype(np.int16), 0, 16)
+
+    yy = np.arange(h, dtype=np.int16)[:, None] % 4
+    xx = np.arange(w, dtype=np.int16)[None, :] % 4
+
+    use_upper = np.zeros((h, w), dtype=bool)
+    for level in range(1, 17):
+        pattern = pattern_set[level]
+        level_mask = (levels == level) & mask
+        use_upper |= level_mask & pattern[yy, xx]
+
+    chosen = np.where(use_upper, high, low)
+    chosen[~mask] = np.rint(positions[~mask]).astype(np.int16)
+
+    safe_family = np.maximum(families, 0)
+    bgr = ramps[safe_family, chosen]
+    return bgr.astype(np.float32), chosen
+
+
 # ---------------------------------------------------------------------------
 # public API
 # ---------------------------------------------------------------------------
@@ -161,6 +272,7 @@ def render(
     struct: dict,
     *,
     dither_method: str,
+    pattern_style: str,
     dither_fraction_min: float,
     dither_fraction_max: float,
     dither_gradient_min: float,
@@ -206,7 +318,14 @@ def render(
         & (gradient >= dither_gradient_min)
     )
 
-    if dither_method == "bayer":
+    if dither_method == "pattern":
+        pattern_set = PATTERNS[pattern_style]
+        dithered_bgr, rendered_steps = _render_pattern(
+            position, families, ramps, dither_mask, pattern_set
+        )
+        final_bgr = hard_bgr.copy()
+        final_bgr[dither_mask] = dithered_bgr[dither_mask]
+    elif dither_method == "bayer":
         dithered_bgr, rendered_steps = _render_bayer(
             position, families, ramps, dither_mask
         )

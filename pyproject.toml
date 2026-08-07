@@ -12,6 +12,7 @@ dependencies = [
     "loguru>=0.7.3",
     "matplotlib>=3.11.1",
     "opencv-python>=5.0.0.93",
+    "pyqt6>=6.11.0",
 ]
 
 [project.scripts]
@@ -31,7 +32,10 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "mdformat>=1.0.0",
     "pytest>=9.1.1",
+    "radon>=6.0.1",
     "ruff>=0.16.1",
     "ty>=0.0.69",
+    "vulture>=2.16",
 ]

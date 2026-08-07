@@ -1,7 +1,7 @@
 ;paint.net Palette File
 ;Downloaded from Lospec.com/palette-list
 ;Palette Name: Resurrect 64
-;Description: 
+;Description:
 ;Colors: 64
 FF2e222f
 FF3e3546

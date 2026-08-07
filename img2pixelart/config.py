@@ -53,6 +53,7 @@ class StructureConfig:
 @dataclass
 class RenderConfig:
     dither_method: str
+    pattern_style: str
     dither_fraction_min: float
     dither_fraction_max: float
     dither_gradient_min: float
@@ -140,6 +141,7 @@ def validate_settings(cfg: DictConfig) -> None:
         "render",
         [
             "dither_method",
+            "pattern_style",
             "dither_fraction_min",
             "dither_fraction_max",
             "dither_gradient_min",
@@ -227,9 +229,13 @@ def validate_settings(cfg: DictConfig) -> None:
         )
 
     # ── render 业务规则 ──
-    if r.dither_method not in ("none", "bayer", "floyd_steinberg"):
+    if r.dither_method not in ("none", "bayer", "floyd_steinberg", "pattern"):
         errors.append(
-            f"render.dither_method={r.dither_method!r} 必须是 none | bayer | floyd_steinberg"
+            f"render.dither_method={r.dither_method!r} 必须是 none | bayer | floyd_steinberg | pattern"
+        )
+    if r.pattern_style not in ("ordered", "diagonal", "clustered"):
+        errors.append(
+            f"render.pattern_style={r.pattern_style!r} 必须是 ordered | diagonal | clustered"
         )
     if not 0.0 <= r.dither_fraction_min < r.dither_fraction_max <= 1.0:
         errors.append("render dither 分位参数必须满足 0 <= min < max <= 1")

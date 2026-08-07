@@ -144,6 +144,7 @@ def _run_pipeline(
         perceived,
         struct,
         dither_method=r.dither_method,
+        pattern_style=r.pattern_style,
         dither_fraction_min=r.dither_fraction_min,
         dither_fraction_max=r.dither_fraction_max,
         dither_gradient_min=r.dither_gradient_min,
