@@ -1,48 +1,23 @@
-import shutil
 from pathlib import Path
-from typing import Annotated
 
 import cv2
-import cyclopts
+import hydra
 import numpy as np
 from loguru import logger
-from omegaconf import OmegaConf
+from omegaconf import DictConfig
 
-from .config import load_settings
+from .config import validate_settings
 from .perceive import perceive
 from .render import render
 from .structure import structure
 
-app = cyclopts.App(name="img2pixelart")
 
+def _run_pipeline(
+    bgra: np.ndarray, cfg: DictConfig, debug_dir: Path
+) -> tuple[np.ndarray, np.ndarray]:
+    """perceive → structure → render，返回 (final_bgr, alpha_down)。"""
+    debug_dir.mkdir(parents=True, exist_ok=True)
 
-@app.default
-def main(
-    img: Path,
-    size: int = 96,
-    setting: Annotated[
-        list[str] | None, cyclopts.Parameter(allow_repeating=True)
-    ] = None,
-) -> None:
-    """将图片转换为像素画风格。
-
-    算法 settings 由 conf/config.yaml（hydra-core）提供，可用 --setting key=value 覆盖。
-    """
-    cfg = load_settings(setting)
-    logger.info("settings loaded:\n{}", OmegaConf.to_yaml(cfg))
-
-    bgra = cv2.imread(str(img), cv2.IMREAD_UNCHANGED)
-    if bgra is None:
-        raise ValueError(f"cannot read image: {img}")
-    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
-        raise ValueError(f"image must be BGR or BGRA, got shape {bgra.shape}")
-
-    debug_dir = img.parent / img.stem
-    if debug_dir.exists():
-        shutil.rmtree(debug_dir)
-    debug_dir.mkdir(parents=True)
-
-    # ── perceive ──
     p = cfg.perceive
     perceived = perceive(
         bgra,
@@ -77,11 +52,10 @@ def main(
         p.ramp_steps,
     )
 
-    # ── structure ──
     s = cfg.structure
     struct = structure(
         perceived,
-        size=size,
+        size=cfg.size,
         alpha_coverage=s.alpha_coverage,
         edge_coverage=s.edge_coverage,
         edge_min_length=s.edge_min_length,
@@ -97,13 +71,12 @@ def main(
     )
     logger.info(
         "structure: {}×{} grid, {} fg pixels, small_cleanup={}",
-        size,
-        size,
+        cfg.size,
+        cfg.size,
         struct["alpha_down"].sum(),
         struct["small_cleanup_applied"],
     )
 
-    # ── render ──
     r = cfg.render
     final_bgr, _meta = render(
         perceived,
@@ -117,17 +90,39 @@ def main(
         debug_dir=debug_dir,
     )
 
-    # ── 叠 alpha 写出 ──
-    alpha = struct["alpha_down"].astype(np.uint8) * 255
-    final_bgra = np.dstack([final_bgr, alpha])
+    return final_bgr, struct["alpha_down"]
 
-    out = img.parent / f"{img.stem}_pixelart.png"
+
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    """将图片转换为像素画风格。
+
+    用法:
+      img2pixelart img=test.png
+      img2pixelart img=test.png size=64 perceive.ramp_steps=5
+      img2pixelart img=test.png -m perceive.ramp_steps=3,5
+    """
+    validate_settings(cfg)
+
+    img_path = Path(hydra.utils.to_absolute_path(cfg.img))
+    bgra = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+    if bgra is None:
+        raise ValueError(f"cannot read image: {img_path}")
+    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
+        raise ValueError(f"image must be BGR or BGRA, got shape {bgra.shape}")
+
+    # Hydra 已 chdir 到输出目录，中间产物和结果直接写当前目录
+    final_bgr, alpha = _run_pipeline(bgra, cfg, Path.cwd())
+
+    alpha_u8 = alpha.astype(np.uint8) * 255
+    final_bgra = np.dstack([final_bgr, alpha_u8])
+
+    out = Path("result.png")
     if not cv2.imwrite(str(out), final_bgra):
         logger.error(f"failed to write output: {out}")
         raise SystemExit(3)
-    logger.info("output: {}", out)
-    logger.info("debug intermediates: {}", debug_dir)
+    logger.info("output: {}/{}", Path.cwd(), out)
 
 
 if __name__ == "__main__":
-    app()
+    main()

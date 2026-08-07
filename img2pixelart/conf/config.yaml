@@ -1,8 +1,18 @@
-# 全局 settings —— 由 hydra-core 加载（img2pixelart/cli.py -> load_settings）
+# 全局 settings —— 由 hydra-core 加载
 defaults:
   - _self_
   - perceive: default
   - structure: default
   - render: default
 
+img: ???
+size: 96
 
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: outputs/single/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: outputs/multirun/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra:job.override_dirname}

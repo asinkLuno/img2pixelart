@@ -1,9 +1,6 @@
-"""配置 schema 与校验。
+"""配置 schema 与业务规则校验。
 
-所有参数默认值由 conf/（hydra-core）提供，本模块不设代码层默认值：
-- dataclass 字段无默认值，值全部来自 conf/*.yaml；
-- 结构校验（未知 key / 类型 / 缺失字段）由 OmegaConf.merge(structured schema, cfg) 完成；
-- 业务规则校验（取值范围等）由 validate_settings 完成。
+所有参数默认值由 conf/（hydra-core）提供，本模块不设代码层默认值。
 """
 
 from dataclasses import dataclass
@@ -247,20 +244,3 @@ def validate_settings(cfg: DictConfig) -> None:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
 
 
-def load_settings(overrides: list[str] | None = None) -> DictConfig:
-    """用 hydra-core 从 conf/ 加载 settings 并做结构 + 业务校验。
-
-    overrides 为 hydra 覆盖项（dotlist），如 ["perceive.denoise_d=5"]。
-    返回 struct 模式 DictConfig：未知 key / 类型错误在加载时直接报错，
-    缺失字段与取值范围问题由 validate_settings 汇总为 ValueError。
-    """
-    from hydra import compose, initialize
-
-    with initialize(version_base=None, config_path="conf"):
-        cfg = compose(config_name="config", overrides=overrides)
-
-    merged = OmegaConf.merge(OmegaConf.structured(Settings), cfg)
-    if not isinstance(merged, DictConfig):
-        raise TypeError(f"OmegaConf.merge 应返回 DictConfig，实际为 {type(merged)}")
-    validate_settings(merged)
-    return merged
