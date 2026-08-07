@@ -18,3 +18,6 @@ hydra:
   sweep:
     dir: outputs/multirun/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra:job.override_dirname}
+  callbacks:
+    auto_stitch:
+      _target_: img2pixelart.cli._StitchCallback

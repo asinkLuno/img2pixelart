@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import hydra
 import numpy as np
+from hydra.experimental.callback import Callback
 from loguru import logger
 from omegaconf import DictConfig
 
@@ -171,6 +172,19 @@ def _run_pipeline(
     return final_bgr, struct["alpha_down"]
 
 
+class _StitchCallback(Callback):
+    """multirun 结束后自动拼接所有 result.png。"""
+
+    def on_multirun_end(self, config: DictConfig, **_: object) -> None:  # type: ignore[override]
+        sweep_dir = Path(hydra.utils.to_absolute_path(config.hydra.sweep.dir))
+        if not sweep_dir.is_dir():
+            return
+        # 只有存在 result.png 时才拼接
+        if not list(sweep_dir.rglob("result.png")):
+            return
+        stitch_results(sweep_dir, output_path=sweep_dir / "combined.png")
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def _hydra_main(cfg: DictConfig) -> None:
     """将图片转换为像素画风格（Hydra pipeline）。"""
@@ -247,6 +261,116 @@ def crop_padding(img_path: Path) -> None:
         x_max - x_min + 1,
         y_max - y_min + 1,
     )
+
+
+def stitch_results(
+    multirun_dir: Path,
+    output_path: Path | None = None,
+    columns: int | None = None,
+    no_label: bool = False,
+) -> None:
+    """把 multirun 输出目录里的所有 result.png 拼成一张网格图。"""
+    results = sorted(multirun_dir.rglob("result.png"))
+    if not results:
+        logger.error(f"no result.png found in {multirun_dir}")
+        raise SystemExit(1)
+
+    images: list[np.ndarray] = []
+    labels: list[str] = []
+    for p in results:
+        img = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+        if img is None:
+            continue
+        images.append(img)
+        overrides_path = p.parent / ".hydra" / "overrides.yaml"
+        if overrides_path.exists():
+            lines = overrides_path.read_text().strip().splitlines()
+            parts = [line.lstrip("- ") for line in lines if line.startswith("- ")]
+            labels.append(", ".join(parts) if parts else p.parent.name)
+        else:
+            labels.append(p.parent.name)
+
+    if not images:
+        logger.error("no readable images found")
+        raise SystemExit(1)
+
+    n = len(images)
+    cols = columns or int(np.ceil(np.sqrt(n)))
+    rows = int(np.ceil(n / cols))
+
+    max_h = max(img.shape[0] for img in images)
+    max_w = max(img.shape[1] for img in images)
+    ch = max(img.shape[2] for img in images)
+
+    pad = 4
+    label_h = 0
+    short_labels: list[list[str]] = []
+    font_scale = 0.35
+    if not no_label:
+        font_scale = max(0.25, min(0.45, max_w / 400))
+        for raw in labels:
+            parts = raw.split(", ")
+            lines: list[str] = []
+            cur = ""
+            for part in parts:
+                candidate = f"{cur}, {part}" if cur else part
+                if len(candidate) <= 60:
+                    cur = candidate
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = part
+            if cur:
+                lines.append(cur)
+            short_labels.append(lines)
+        max_lines = max((len(ln) for ln in short_labels), default=0)
+        label_h = int(max_lines * (max_h * font_scale * 1.6 / 10) + pad * 2)
+
+    cell_h, cell_w = max_h + label_h, max_w
+    canvas_h = rows * cell_h
+    canvas_w = cols * cell_w
+    canvas = np.zeros((canvas_h, canvas_w, ch), dtype=np.uint8)
+
+    for idx, img in enumerate(images):
+        r, c = divmod(idx, cols)
+        x0, y0 = c * cell_w, r * cell_h
+
+        if short_labels and short_labels[idx]:
+            for li, line in enumerate(short_labels[idx]):
+                y_text = y0 + label_h - pad - (len(short_labels[idx]) - 1 - li) * 4
+                cv2.putText(
+                    canvas,
+                    line,
+                    (x0 + 2, max(y_text, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (200, 200, 200),
+                    1,
+                    cv2.LINE_AA,
+                )
+
+        ih, iw = img.shape[:2]
+        ox = x0 + (max_w - iw) // 2
+        oy = y0 + label_h + (max_h - ih) // 2
+
+        if img.shape[-1] != ch:
+            if ch == 4:
+                img = np.dstack(
+                    [img[..., :3], np.full((ih, iw, 1), 255, dtype=np.uint8)]
+                )
+            else:
+                img = img[..., :ch]
+
+        canvas[oy : oy + ih, ox : ox + iw] = img
+
+    out = output_path or (multirun_dir / "combined.png")
+    suffix = out.suffix.lower()
+    if suffix in (".jpg", ".jpeg") and canvas.shape[-1] == 4:
+        canvas = cv2.cvtColor(canvas, cv2.COLOR_BGRA2BGR)
+    if not cv2.imwrite(str(out), canvas):
+        logger.error(f"failed to write: {out}")
+        raise SystemExit(3)
+    logger.info("saved {}×{} grid ({} images) → {}", rows, cols, n, out)
 
 
 def main() -> None:
