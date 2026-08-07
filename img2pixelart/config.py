@@ -17,6 +17,23 @@ class PerceiveConfig:
     denoise_sigma: float
     mean_shift_sp: float
     mean_shift_sr: float
+    requested_groups: int
+    chroma_floor: float
+    merge_angle_degrees: float
+    minimum_lightness: float
+    minimum_fit_pixels: int
+    maximum_fit_pixels: int
+    random_seed: int
+    ramp_steps: int
+    ramp_minimum_span: float
+    ramp_low_quantile: float
+    ramp_high_quantile: float
+    ramp_minimum_family_pixels: int
+    ramp_chroma_quantile: float
+    ramp_endpoint_chroma_scale: float
+    ramp_maximum_chroma: float
+    canny_low: int
+    canny_high: int
 
 
 @dataclass
@@ -32,7 +49,29 @@ def validate_settings(cfg: DictConfig) -> None:
     errors: list[str] = []
 
     # 缺失字段：merge 后为 ???，直接访问会抛 MissingMandatoryValue，先统一收集
-    for field in ("denoise_d", "denoise_sigma", "mean_shift_sp", "mean_shift_sr"):
+    for field in (
+        "denoise_d",
+        "denoise_sigma",
+        "mean_shift_sp",
+        "mean_shift_sr",
+        "requested_groups",
+        "chroma_floor",
+        "merge_angle_degrees",
+        "minimum_lightness",
+        "minimum_fit_pixels",
+        "maximum_fit_pixels",
+        "random_seed",
+        "ramp_steps",
+        "ramp_minimum_span",
+        "ramp_low_quantile",
+        "ramp_high_quantile",
+        "ramp_minimum_family_pixels",
+        "ramp_chroma_quantile",
+        "ramp_endpoint_chroma_scale",
+        "ramp_maximum_chroma",
+        "canny_low",
+        "canny_high",
+    ):
         if OmegaConf.is_missing(p, field):
             errors.append(
                 f"perceive.{field} 缺失（conf/perceive/default.yaml 或覆盖项中未提供）"
@@ -56,6 +95,63 @@ def validate_settings(cfg: DictConfig) -> None:
 
     if p.mean_shift_sr <= 0:
         errors.append(f"perceive.mean_shift_sr={p.mean_shift_sr} 必须 > 0")
+
+    if p.requested_groups < 1:
+        errors.append(f"perceive.requested_groups={p.requested_groups} 必须 >= 1")
+
+    if p.chroma_floor < 0:
+        errors.append(f"perceive.chroma_floor={p.chroma_floor} 必须 >= 0")
+
+    if p.minimum_fit_pixels < 1:
+        errors.append(f"perceive.minimum_fit_pixels={p.minimum_fit_pixels} 必须 >= 1")
+
+    if p.maximum_fit_pixels <= p.minimum_fit_pixels:
+        errors.append(
+            f"perceive.maximum_fit_pixels={p.maximum_fit_pixels} 必须 > "
+            f"minimum_fit_pixels ({p.minimum_fit_pixels})"
+        )
+
+    if p.ramp_steps < 3:
+        errors.append(f"perceive.ramp_steps={p.ramp_steps} 必须 >= 3")
+
+    if p.ramp_minimum_span < 0 or p.ramp_minimum_span > 100:
+        errors.append(
+            f"perceive.ramp_minimum_span={p.ramp_minimum_span} 必须位于 [0, 100]"
+        )
+
+    if not 0 <= p.ramp_low_quantile < p.ramp_high_quantile <= 1:
+        errors.append(
+            f"perceive.ramp_low_quantile={p.ramp_low_quantile} / "
+            f"ramp_high_quantile={p.ramp_high_quantile} 必须满足 0 <= low < high <= 1"
+        )
+
+    if p.ramp_minimum_family_pixels < 1:
+        errors.append(
+            f"perceive.ramp_minimum_family_pixels={p.ramp_minimum_family_pixels} 必须 >= 1"
+        )
+
+    if not 0 <= p.ramp_chroma_quantile <= 1:
+        errors.append(
+            f"perceive.ramp_chroma_quantile={p.ramp_chroma_quantile} 必须位于 [0, 1]"
+        )
+
+    if not 0 <= p.ramp_endpoint_chroma_scale <= 1:
+        errors.append(
+            f"perceive.ramp_endpoint_chroma_scale={p.ramp_endpoint_chroma_scale} 必须位于 [0, 1]"
+        )
+
+    if p.ramp_maximum_chroma <= 0:
+        errors.append(f"perceive.ramp_maximum_chroma={p.ramp_maximum_chroma} 必须 > 0")
+
+    if p.canny_low < 0 or p.canny_high < 0:
+        errors.append(
+            f"perceive.canny_low={p.canny_low} / canny_high={p.canny_high} 必须 >= 0"
+        )
+
+    if p.canny_low > p.canny_high:
+        errors.append(
+            f"perceive.canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}"
+        )
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))

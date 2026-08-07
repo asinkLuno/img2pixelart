@@ -34,7 +34,16 @@ def test_unknown_key_in_yaml_rejected():
     from omegaconf.errors import ConfigKeyError
 
     raw = OmegaConf.create(
-        {"auto_background": False, "perceive": {"denoise_d": 9, "denoise_sigma": 75, "mean_shift_sp": 15, "mean_shift_sr": 40, "typo": 1}}
+        {
+            "auto_background": False,
+            "perceive": {
+                "denoise_d": 9,
+                "denoise_sigma": 75,
+                "mean_shift_sp": 15,
+                "mean_shift_sr": 40,
+                "typo": 1,
+            },
+        }
     )
     with pytest.raises(ConfigKeyError) as ei:
         OmegaConf.merge(OmegaConf.structured(Settings), raw)
@@ -52,7 +61,10 @@ def test_type_error_rejected():
 def test_missing_field_rejected():
     # 缺 mean_shift_sr：merge 后为 ???，validate_settings 汇总为友好错误
     raw = OmegaConf.create(
-        {"auto_background": False, "perceive": {"denoise_d": 9, "denoise_sigma": 75, "mean_shift_sp": 15}}
+        {
+            "auto_background": False,
+            "perceive": {"denoise_d": 9, "denoise_sigma": 75, "mean_shift_sp": 15},
+        }
     )
     merged = OmegaConf.merge(OmegaConf.structured(Settings), raw)
     assert OmegaConf.is_missing(merged.perceive, "mean_shift_sr")
@@ -86,5 +98,12 @@ def test_validate_settings_unit():
 
 
 def test_valid_business_rules_pass():
-    cfg = load_settings(["perceive.denoise_d=5", "perceive.denoise_sigma=10", "perceive.mean_shift_sp=3", "perceive.mean_shift_sr=5"])
+    cfg = load_settings(
+        [
+            "perceive.denoise_d=5",
+            "perceive.denoise_sigma=10",
+            "perceive.mean_shift_sp=3",
+            "perceive.mean_shift_sr=5",
+        ]
+    )
     validate_settings(cfg)  # 不应抛异常

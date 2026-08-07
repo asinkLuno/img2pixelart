@@ -18,7 +18,9 @@ app = cyclopts.App(name="img2pixelart")
 def main(
     img: Path,
     auto_background: bool = False,
-    setting: Annotated[list[str] | None, cyclopts.Parameter(allow_repeating=True)] = None,
+    setting: Annotated[
+        list[str] | None, cyclopts.Parameter(allow_repeating=True)
+    ] = None,
 ) -> None:
     """将图片转换为像素画风格。
 
@@ -44,8 +46,25 @@ def main(
         denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
+        requested_groups=p.requested_groups,
+        chroma_floor=p.chroma_floor,
+        merge_angle_degrees=p.merge_angle_degrees,
+        minimum_lightness=p.minimum_lightness,
+        minimum_fit_pixels=p.minimum_fit_pixels,
+        maximum_fit_pixels=p.maximum_fit_pixels,
+        random_seed=p.random_seed,
+        ramp_steps=p.ramp_steps,
+        ramp_minimum_span=p.ramp_minimum_span,
+        ramp_low_quantile=p.ramp_low_quantile,
+        ramp_high_quantile=p.ramp_high_quantile,
+        ramp_minimum_family_pixels=p.ramp_minimum_family_pixels,
+        ramp_chroma_quantile=p.ramp_chroma_quantile,
+        ramp_endpoint_chroma_scale=p.ramp_endpoint_chroma_scale,
+        ramp_maximum_chroma=p.ramp_maximum_chroma,
+        canny_low=p.canny_low,
+        canny_high=p.canny_high,
     )
-    logger.info("perceive: blocks={} alpha={}", blocks.shape, source_alpha is not None)
+    logger.info("perceive result keys: {}", list(blocks.keys()))
 
 
 if __name__ == "__main__":

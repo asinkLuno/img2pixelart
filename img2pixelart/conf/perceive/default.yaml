@@ -1,6 +1,23 @@
-# perceive 阶段（去噪 / 均值漂移分块）参数
+# perceive 阶段（去噪 / 均值漂移分块 / 色相族聚类 / 明度阶梯）参数
 # 可用命令行覆盖，如 --setting perceive.denoise_d=5
 denoise_d: 9
 denoise_sigma: 75
 mean_shift_sp: 15
 mean_shift_sr: 40
+requested_groups: 2
+chroma_floor: 5.0
+merge_angle_degrees: 10.0
+minimum_lightness: 8.0
+minimum_fit_pixels: 16
+maximum_fit_pixels: 30000
+random_seed: 11
+ramp_steps: 5
+ramp_minimum_span: 42.0
+ramp_low_quantile: 0.04
+ramp_high_quantile: 0.96
+ramp_minimum_family_pixels: 8
+ramp_chroma_quantile: 0.5
+ramp_endpoint_chroma_scale: 0.78
+ramp_maximum_chroma: 80.0
+canny_low: 65
+canny_high: 155

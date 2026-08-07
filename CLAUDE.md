@@ -38,8 +38,8 @@ All configurable parameters **must be provided through `hydra-core` configuratio
 Avoid patterns such as:
 
 ```python
-def create_client(timeout: int = 30):
-    ...
+def create_client(timeout: int = 30): ...
+
 
 timeout = config.get("timeout", 30)
 timeout = getattr(config, "timeout", 30)
@@ -48,8 +48,8 @@ timeout = getattr(config, "timeout", 30)
 Instead, require the value explicitly:
 
 ```python
-def create_client(timeout: int):
-    ...
+def create_client(timeout: int): ...
+
 
 create_client(timeout=cfg.client.timeout)
 ```
