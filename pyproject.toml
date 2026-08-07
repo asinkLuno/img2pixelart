@@ -1,6 +1,6 @@
 [project]
 name = "img2pixelart"
-version = "0.1.1"
+version = "0.1.2"
 description = "Convert photos to pixel art with palette fitting and multi-style dithering"
 readme = "README.md"
 license = { text = "MIT" }
