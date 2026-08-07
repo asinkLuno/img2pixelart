@@ -34,14 +34,18 @@ def validate_settings(cfg: DictConfig) -> None:
     # 缺失字段：merge 后为 ???，直接访问会抛 MissingMandatoryValue，先统一收集
     for field in ("denoise_d", "denoise_sigma", "mean_shift_sp", "mean_shift_sr"):
         if OmegaConf.is_missing(p, field):
-            errors.append(f"perceive.{field} 缺失（conf/perceive/default.yaml 或覆盖项中未提供）")
+            errors.append(
+                f"perceive.{field} 缺失（conf/perceive/default.yaml 或覆盖项中未提供）"
+            )
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
 
     # cv2.bilateralFilter 要求 d 为正奇数；d <= 0 时按 OpenCV 行为退化
     if p.denoise_d <= 0 or p.denoise_d % 2 == 0:
-        errors.append(f"perceive.denoise_d={p.denoise_d} 必须是正奇数（bilateralFilter 要求）")
+        errors.append(
+            f"perceive.denoise_d={p.denoise_d} 必须是正奇数（bilateralFilter 要求）"
+        )
 
     if p.denoise_sigma <= 0:
         errors.append(f"perceive.denoise_sigma={p.denoise_sigma} 必须 > 0")
