@@ -135,6 +135,65 @@ def down_edges_coverage(edges: np.ndarray, size: int, threshold: float) -> BoolA
     return avg >= threshold
 
 
+def _down_family_weighted_L(
+    l_channel: FloatArray,
+    family_labels: LabelArray,
+    family_down: LabelArray,
+    foreground: BoolArray,
+    size: int,
+) -> FloatArray:
+    """对每个目标网格，只统计获胜 family 的前景像素明度均值。
+
+    没有有效像素的格子 fallback 到整格面积均值。
+    """
+    h, w = l_channel.shape
+    out = np.zeros((size, size), dtype=np.float32)
+    rows = list(_cells(h, size))
+    cols = list(_cells(w, size))
+
+    for iy, (y0, y1) in enumerate(rows):
+        for ix, (x0, x1) in enumerate(cols):
+            local_fg = foreground[y0:y1, x0:x1]
+            if not local_fg.any():
+                out[iy, ix] = float(
+                    l_channel[y0:y1, x0:x1].mean()
+                )
+                continue
+            local_family = family_labels[y0:y1, x0:x1]
+            target = family_down[iy, ix]
+            mask = local_fg & (local_family == target)
+            if mask.any():
+                out[iy, ix] = float(l_channel[y0:y1, x0:x1][mask].mean())
+            else:
+                out[iy, ix] = float(
+                    l_channel[y0:y1, x0:x1][local_fg].mean()
+                )
+
+    return out
+
+
+def _quantize_tiers(
+    l_down: FloatArray,
+    family_down: LabelArray,
+    valid: BoolArray,
+    ramp_l: FloatArray,
+) -> LabelArray:
+    """从降采样明度图和 family ramp 重新计算 tier_down。
+
+    每个有效像素取 ramp_l[family] 中与 l_down 最接近的档位。
+    """
+    out = np.full(family_down.shape, -1, dtype=np.int16)
+    for f in range(len(ramp_l)):
+        mask = valid & (family_down == f)
+        if not mask.any():
+            continue
+        l_vals = l_down[mask]
+        rl = ramp_l[f]
+        diffs = np.abs(l_vals[:, None] - rl[None, :])
+        out[mask] = np.argmin(diffs, axis=1).astype(np.int16)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # 线条后处理
 # ---------------------------------------------------------------------------
@@ -334,21 +393,21 @@ def _simplify_small_sprite(
     family = repair_missing_family(family_down.copy(), alpha)
     tier = tier_down.copy()
 
-    # 轮廓 / 色相族边界 / 色阶边界在平滑时受保护
+    # 轮廓在平滑时始终受保护；正在平滑的维度，其边界不再保护自身
     silhouette = alpha_inner_boundary(alpha)
-    family_boundary = label_boundary(family, alpha)
-    shade_boundary = label_boundary(tier, alpha)
 
-    protect = silhouette | family_boundary | shade_boundary
-    family = local_majority_smooth(family, alpha, protect, small_cleanup_passes, 5)
+    # 平滑 family：只保护轮廓（不保护 family_boundary，否则 1px 噪声改不掉）
+    family = local_majority_smooth(family, alpha, silhouette, small_cleanup_passes, 5)
     family = repair_missing_family(family, alpha)
     family_boundary = label_boundary(family, alpha)
-    protect = silhouette | family_boundary | shade_boundary
+
+    # 平滑 tier：保护轮廓 + 色相族边界（不保护 shade_boundary 自身）
+    shade_boundary = label_boundary(tier, alpha)
     tier = np.clip(
         local_majority_smooth(
             tier,
             alpha,
-            protect,
+            silhouette | family_boundary,
             small_cleanup_passes,
             small_tier_smooth_majority,
         ),
@@ -424,11 +483,17 @@ def structure(
     family_down = down_labels_majority(
         perceived["family_labels"], perceived["foreground"], size
     )
-    tier_down = down_labels_majority(
-        perceived["tier"], perceived["foreground"], size, default=0
-    )
-    l_down = down_area(perceived["L"], size)
     family_down = repair_missing_family(family_down, alpha_down)
+    l_down = _down_family_weighted_L(
+        perceived["L"],
+        perceived["family_labels"],
+        family_down,
+        perceived["foreground"],
+        size,
+    )
+    tier_down = _quantize_tiers(
+        l_down, family_down, alpha_down, perceived["ramp_l"]
+    )
 
     _save("09_alpha_down", alpha_down.astype(np.uint8) * 255)
 

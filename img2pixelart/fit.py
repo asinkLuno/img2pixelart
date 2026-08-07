@@ -60,8 +60,8 @@ def _angular_distance(a: float, b: float) -> float:
 
 def structure_palette_ramps(
     palette_bgr: NDArray[np.uint8],
-    chroma_floor: float = 5.0,
-    hue_gap_degrees: float = 25.0,
+    chroma_floor: float,
+    hue_gap_degrees: float,
 ) -> list[tuple[FloatArray, NDArray[np.uint8]]]:
     """把平铺调色板组织为色相族明度阶梯列表。
 
@@ -128,18 +128,18 @@ def structure_palette_ramps(
 
 def palette_auto_config(
     palette_ramps: list[tuple[FloatArray, NDArray[np.uint8]]],
+    auto_chroma_floor: float,
 ) -> tuple[int, int]:
     """从调色盘 ramp 结构中自动推导 ``(requested_groups, ramp_steps)``。
 
     - requested_groups = max(2, 彩色 ramp 数)
     - ramp_steps = median(所有 ramp 的原生长度)，至少为 3
     """
-    chroma_floor = 3.0
     chromatic_count = 0
     all_steps: list[int] = []
     for lab, _ in palette_ramps:
         mean_chroma = float(np.linalg.norm(lab[:, 1:3], axis=1).mean())
-        if mean_chroma >= chroma_floor:
+        if mean_chroma >= auto_chroma_floor:
             chromatic_count += 1
         all_steps.append(len(lab))
 
@@ -149,54 +149,34 @@ def palette_auto_config(
 
 
 # ---------------------------------------------------------------------------
-# 阶梯采样
+# ramp 打包
 # ---------------------------------------------------------------------------
 
 
-def _sample_ramp(
-    ramp_lab: FloatArray,
-    ramp_bgr: NDArray[np.uint8],
-    steps: int,
-) -> tuple[FloatArray, FloatArray]:
-    """从调色盘阶梯中等距采样 steps 档，保留精确 BGR 色值。
-
-    返回 ``(sampled_lab, sampled_bgr)``，均为 float32。
-    """
-    src_l = ramp_lab[:, 0]
-    lo, hi = float(src_l.min()), float(src_l.max())
-    tgt_l = np.linspace(lo, hi, steps, dtype=np.float32)
-
-    result_lab = np.zeros((steps, 3), dtype=np.float32)
-    result_bgr = np.zeros((steps, 3), dtype=np.float32)
-    for i, tl in enumerate(tgt_l):
-        idx = int(np.argmin(np.abs(src_l - tl)))
-        result_lab[i] = ramp_lab[idx]
-        result_bgr[i] = ramp_bgr[idx].astype(np.float32)
-
-    result_lab[:, 0] = tgt_l  # 用均匀明度替代真实明度，供连续位置计算
-    return result_lab, result_bgr
-
-
-def build_target_ramps(
+def pack_ramps(
     palette_ramps: list[tuple[FloatArray, NDArray[np.uint8]]],
-    steps: int,
-) -> tuple[FloatArray, FloatArray]:
-    """把调色盘阶梯统一采样为 ``(F, steps, 3)`` BGR 和 ``(F, steps)`` L。
+) -> tuple[FloatArray, FloatArray, NDArray[np.int32]]:
+    """把变长调色盘阶梯打包为 padded 数组。
 
-    颜色取自原始调色盘精确 BGR 值（非 Lab 插值），确保输出只用调色盘颜色。
-    返回 ``(ramps_bgr, ramp_l)``。
+    返回 ``(bgr_padded, l_padded, steps_per_family)``：
+    - bgr_padded: ``(F, max_steps, 3)`` float32，超出部分填 0
+    - l_padded: ``(F, max_steps)`` float32，超出部分填 NaN
+    - steps_per_family: ``(F,)`` int32，每个 family 的原生长度
     """
     F = len(palette_ramps)
-    ramps_bgr = np.zeros((F, steps, 3), dtype=np.float32)
-    ramp_l = np.zeros((F, steps), dtype=np.float32)
+    max_steps = max(len(lab) for lab, _ in palette_ramps)
 
-    for t in range(F):
-        lab, bgr = palette_ramps[t]
-        sampled_lab, sampled_bgr = _sample_ramp(lab, bgr, steps)
-        ramp_l[t] = sampled_lab[:, 0]
-        ramps_bgr[t] = sampled_bgr
+    bgr_padded = np.zeros((F, max_steps, 3), dtype=np.float32)
+    l_padded = np.full((F, max_steps), np.nan, dtype=np.float32)
+    steps_per_family = np.zeros(F, dtype=np.int32)
 
-    return ramps_bgr, ramp_l
+    for t, (lab, bgr) in enumerate(palette_ramps):
+        s = len(lab)
+        steps_per_family[t] = s
+        bgr_padded[t, :s] = bgr.astype(np.float32)
+        l_padded[t, :s] = lab[:, 0]
+
+    return bgr_padded, l_padded, steps_per_family
 
 
 # ---------------------------------------------------------------------------
@@ -251,24 +231,35 @@ def match_families(
     mapping = np.full(F_src, -1, dtype=np.int32)
     for s in range(F_src):
         best_cost = float("inf")
-        best_t = 0
+        best_t = -1
+        # 优先同类型匹配（中性↔中性，彩色↔彩色）
         for t in range(F_tgt):
-            # 中性族必须匹配中性族，彩色族必须匹配彩色族
             if src_neutral[s] != tgt_neutral[t]:
                 continue
-
-            cost = 0.0
+            cost = abs(src_median_l[s] - tgt_median_l[t]) / 100.0
+            cost += abs(src_chroma[s] - tgt_chroma[t]) / 100.0
             if not src_neutral[s] and not tgt_neutral[t]:
                 hue_sim = float(np.dot(source_hue_directions[s], tgt_hue[t]))
                 cost += 1.0 - hue_sim
-
-            cost += abs(src_median_l[s] - tgt_median_l[t]) / 100.0
-            cost += abs(src_chroma[s] - tgt_chroma[t]) / 100.0
-
             if cost < best_cost:
                 best_cost = cost
                 best_t = t
 
+        # 无同类型匹配时降级为跨类型匹配（只用 L + chroma，忽略 hue）
+        if best_t < 0:
+            for t in range(F_tgt):
+                cost = abs(src_median_l[s] - tgt_median_l[t]) / 100.0
+                cost += abs(src_chroma[s] - tgt_chroma[t]) / 100.0
+                if cost < best_cost:
+                    best_cost = cost
+                    best_t = t
+
+        if best_t < 0:
+            raise ValueError(
+                f"源色相族 {s} 无法匹配任何目标调色盘阶梯"
+                f"（neutral={src_neutral[s]}），"
+                f"目标调色盘为空？"
+            )
         mapping[s] = best_t
 
     return mapping
@@ -286,14 +277,15 @@ def remap_families_and_tiers(
     l_down: FloatArray,
     source_ramp_l: FloatArray,
     target_ramp_l: FloatArray,
+    target_steps: NDArray[np.int32],
     family_mapping: NDArray[np.int32],
 ) -> tuple[LabelArray, LabelArray]:
     """把 family_down 和 tier_down 从源阶梯空间映射到目标阶梯空间。
 
     family_down 索引从 0..F_src-1 重映射为 0..F_tgt-1。
-    tier_down 按像素明度就近落到目标阶梯的最近档位。
-
-    返回 ``(new_family_down, new_tier_down)``。
+    tier_down 使用相对明度位置：先计算像素在源 ramp 中的归一化位置 [0,1]，
+    再映射到目标 ramp 的对应档位。这样保持"这是该色族里第几亮"的相对关系，
+    而非要求两套调色盘的绝对 L 一致。
     """
     F_src = len(family_mapping)
 
@@ -303,14 +295,18 @@ def remap_families_and_tiers(
     new_family[~valid] = -1
 
     new_tier = np.full(family_down.shape, -1, dtype=np.int16)
+    eps = 1e-6
     for s in range(F_src):
         t = int(family_mapping[s])
+        t_steps = int(target_steps[t])
         mask = valid & (family_down == s)
-        if not mask.any():
+        if not mask.any() or t_steps <= 1:
             continue
         l_vals = l_down[mask]
-        tgt_l = target_ramp_l[t]
-        diffs = np.abs(l_vals[:, None] - tgt_l[None, :])
-        new_tier[mask] = np.argmin(diffs, axis=1).astype(np.int16)
+        src_l = source_ramp_l[s]
+        lo, hi = float(src_l[0]), float(src_l[-1])
+        span = max(hi - lo, eps)
+        u = np.clip((l_vals - lo) / span, 0.0, 1.0)
+        new_tier[mask] = np.round(u * (t_steps - 1)).astype(np.int16)
 
     return new_family, new_tier

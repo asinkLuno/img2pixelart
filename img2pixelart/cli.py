@@ -9,9 +9,9 @@ from omegaconf import DictConfig
 
 from .config import validate_settings
 from .fit import (
-    build_target_ramps,
     load_palette,
     match_families,
+    pack_ramps,
     palette_auto_config,
     remap_families_and_tiers,
     structure_palette_ramps,
@@ -29,18 +29,28 @@ def _run_pipeline(
 
     # ── 调色盘预处理：必须在 perceive 之前，因为要据此设置色相/阶梯参数 ──
     palette_ramps = None
+    resolved_groups: int = cfg.perceive.requested_groups
+    resolved_steps: int = cfg.perceive.ramp_steps
+
     if cfg.palette:
         palette_bgr = load_palette(hydra.utils.to_absolute_path(cfg.palette))
-        palette_ramps = structure_palette_ramps(palette_bgr)
+        f = cfg.fit
+        palette_ramps = structure_palette_ramps(
+            palette_bgr,
+            chroma_floor=f.chroma_floor,
+            hue_gap_degrees=f.hue_gap_degrees,
+        )
         logger.info(
             "palette: {} ramps from {} colors",
             len(palette_ramps),
             len(palette_bgr),
         )
 
-        auto_groups, auto_steps = palette_auto_config(palette_ramps)
-        cfg.perceive.requested_groups = auto_groups
-        cfg.perceive.ramp_steps = auto_steps
+        auto_groups, auto_steps = palette_auto_config(
+            palette_ramps, auto_chroma_floor=f.auto_chroma_floor
+        )
+        resolved_groups = auto_groups
+        resolved_steps = auto_steps
         logger.info(
             "palette: auto-config requested_groups={} ramp_steps={}",
             auto_groups,
@@ -54,7 +64,7 @@ def _run_pipeline(
         denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
-        requested_groups=p.requested_groups,
+        requested_groups=resolved_groups,
         chroma_floor=p.chroma_floor,
         merge_angle_degrees=p.merge_angle_degrees,
         minimum_lightness=p.minimum_lightness,
@@ -62,7 +72,7 @@ def _run_pipeline(
         maximum_fit_pixels=p.maximum_fit_pixels,
         random_seed=p.random_seed,
         spherical_kmeans_iterations=p.spherical_kmeans_iterations,
-        ramp_steps=p.ramp_steps,
+        ramp_steps=resolved_steps,
         ramp_minimum_span=p.ramp_minimum_span,
         ramp_low_quantile=p.ramp_low_quantile,
         ramp_high_quantile=p.ramp_high_quantile,
@@ -75,11 +85,14 @@ def _run_pipeline(
         alpha_threshold=p.alpha_threshold,
         debug_dir=debug_dir,
     )
-    logger.info(
-        "perceive: {} families × {} steps",
-        len(perceived["hue_directions_ab"]),
-        p.ramp_steps,
-    )
+    F_src = len(perceived["hue_directions_ab"])
+    logger.info("perceive: {} families × {} steps", F_src, resolved_steps)
+
+    # 无有效色相族 → 直接返回透明图
+    if F_src == 0:
+        empty_bgr = np.zeros((cfg.size, cfg.size, 3), dtype=np.uint8)
+        empty_alpha = np.zeros((cfg.size, cfg.size), dtype=np.float32)
+        return empty_bgr, empty_alpha
 
     s = cfg.structure
     struct = structure(
@@ -119,10 +132,7 @@ def _run_pipeline(
             {i: int(t) for i, t in enumerate(family_mapping)},
         )
 
-        target_ramps_bgr, target_ramp_l = build_target_ramps(
-            palette_ramps,
-            steps=p.ramp_steps,
-        )
+        target_ramps_bgr, target_ramp_l, target_steps = pack_ramps(palette_ramps)
 
         new_family, new_tier = remap_families_and_tiers(
             struct["family_down"],
@@ -131,6 +141,7 @@ def _run_pipeline(
             struct["L_down"],
             perceived["ramp_l"],
             target_ramp_l,
+            target_steps,
             family_mapping,
         )
 
@@ -138,6 +149,9 @@ def _run_pipeline(
         perceived["ramp_l"] = target_ramp_l
         struct["family_down"] = new_family
         struct["tier_down"] = new_tier
+        steps_per_family = target_steps
+    else:
+        steps_per_family = np.full(F_src, resolved_steps, dtype=np.int32)
 
     r = cfg.render
     final_bgr, _meta = render(
@@ -150,6 +164,7 @@ def _run_pipeline(
         dither_gradient_min=r.dither_gradient_min,
         silhouette_dark_step=r.silhouette_dark_step,
         internal_outline_dark_steps=r.internal_outline_dark_steps,
+        steps_per_family=steps_per_family,
         debug_dir=debug_dir,
     )
 

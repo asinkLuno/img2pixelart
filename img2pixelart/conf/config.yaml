@@ -4,6 +4,7 @@ defaults:
   - perceive: default
   - structure: default
   - render: default
+  - fit: default
 
 img: ???
 size: 96

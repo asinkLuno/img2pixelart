@@ -130,30 +130,38 @@ def continuous_ramp_position(
     family_down: LabelArray,
     ramp_l: FloatArray,
     valid: BoolArray,
+    steps_per_family: NDArray[np.int32],
 ) -> FloatArray:
-    """把每个像素的明度线性映射到其色相族阶梯内的连续位置 [0, steps-1]。
+    """把每个像素的明度线性映射到其色相族阶梯内的连续位置 [0, S_f-1]。
 
     该连续值供抖动阶段在相邻两档之间做插值取舍。
+    steps_per_family 为各族的原生长度。
     """
     position = np.zeros(l_down.shape, dtype=np.float32)
-    steps = ramp_l.shape[1]
     for group in range(len(ramp_l)):
         mask = valid & (family_down == group)
         if not mask.any():
             continue
+        s = int(steps_per_family[group])
         values = l_down[mask]
         position[mask] = np.interp(
-            values, ramp_l[group], np.arange(steps, dtype=np.float32)
+            values, ramp_l[group, :s], np.arange(s, dtype=np.float32)
         )
-    return np.clip(position, 0.0, steps - 1.0)
+    return position
 
 
-def make_palette_strip(ramps: np.ndarray, cell: int = 18) -> np.ndarray:
+def make_palette_strip(
+    ramps: np.ndarray,
+    steps_per_family: NDArray[np.int32],
+    cell: int = 18,
+) -> np.ndarray:
     """把各族阶梯色板拼成一张可视化条带（用于调试输出）。"""
-    groups, steps = ramps.shape[:2]
-    strip = np.zeros((groups * cell, steps * cell, 3), dtype=np.uint8)
+    groups = len(steps_per_family)
+    max_steps = int(steps_per_family.max())
+    strip = np.zeros((groups * cell, max_steps * cell, 3), dtype=np.uint8)
     for group in range(groups):
-        for step in range(steps):
+        s = int(steps_per_family[group])
+        for step in range(s):
             strip[
                 group * cell : (group + 1) * cell,
                 step * cell : (step + 1) * cell,
@@ -171,16 +179,22 @@ def _render_bayer(
     families: LabelArray,
     ramps: FloatArray,
     mask: BoolArray,
+    steps_per_family: NDArray[np.int32],
 ) -> tuple[FloatArray, LabelArray]:
     """Bayer 有序抖动：用 4x4 阈值矩阵在相邻两档之间按小数部分选档。"""
     h, w = positions.shape
+    safe_family = np.maximum(families, 0)
+    max_tier = np.maximum(steps_per_family[safe_family] - 1, 0)
     low = np.floor(positions).astype(np.int16)
-    high = np.minimum(low + 1, ramps.shape[1] - 1)
+    low = np.minimum(low, max_tier)
+    high = np.minimum(low + 1, max_tier)
     fraction = positions - low
     tiled = np.tile(BAYER_4X4, (h // 4 + 1, w // 4 + 1))[:h, :w]
     chosen = np.where(tiled < fraction, high, low).astype(np.int16)
-    chosen[~mask] = np.rint(positions[~mask]).astype(np.int16)
-    safe_family = np.maximum(families, 0)
+    chosen[~mask] = np.minimum(
+        np.rint(positions[~mask]).astype(np.int16),
+        max_tier[~mask],
+    )
     bgr = ramps[safe_family, chosen]
     return bgr.astype(np.float32), chosen
 
@@ -190,6 +204,7 @@ def _render_floyd(
     families: LabelArray,
     ramps: FloatArray,
     mask: BoolArray,
+    steps_per_family: NDArray[np.int32],
 ) -> tuple[FloatArray, LabelArray]:
     """Floyd–Steinberg 误差扩散抖动。
 
@@ -209,10 +224,11 @@ def _render_floyd(
             if not mask[y, x]:
                 continue
             old = float(work[y, x])
-            new = int(np.clip(round(old), 0, ramps.shape[1] - 1))
+            family = families[y, x]
+            max_t = max(0, int(steps_per_family[family]) - 1)
+            new = int(np.clip(round(old), 0, max_t))
             chosen[y, x] = new
             error = old - new
-            family = families[y, x]
             for dy, dx, weight in kernel:
                 ny, nx = y + dy, x + dx
                 if (
@@ -233,6 +249,7 @@ def _render_pattern(
     ramps: FloatArray,
     mask: BoolArray,
     pattern_set: np.ndarray,
+    steps_per_family: NDArray[np.int32],
 ) -> tuple[FloatArray, LabelArray]:
     """微图案抖动：用 4×4 图案字典在相邻两档之间选择。
 
@@ -240,8 +257,11 @@ def _render_pattern(
     再查对应图案决定使用低档还是高档颜色。图案按世界坐标平铺。
     """
     h, w = positions.shape
+    safe_family = np.maximum(families, 0)
+    max_tier = np.maximum(steps_per_family[safe_family] - 1, 0)
     low = np.floor(positions).astype(np.int16)
-    high = np.minimum(low + 1, ramps.shape[1] - 1)
+    low = np.minimum(low, max_tier)
+    high = np.minimum(low + 1, max_tier)
     fraction = positions - low
     levels = np.clip(np.round(fraction * 16).astype(np.int16), 0, 16)
 
@@ -255,9 +275,11 @@ def _render_pattern(
         use_upper |= level_mask & pattern[yy, xx]
 
     chosen = np.where(use_upper, high, low)
-    chosen[~mask] = np.rint(positions[~mask]).astype(np.int16)
+    chosen[~mask] = np.minimum(
+        np.rint(positions[~mask]).astype(np.int16),
+        max_tier[~mask],
+    )
 
-    safe_family = np.maximum(families, 0)
     bgr = ramps[safe_family, chosen]
     return bgr.astype(np.float32), chosen
 
@@ -278,12 +300,14 @@ def render(
     dither_gradient_min: float,
     silhouette_dark_step: int,
     internal_outline_dark_steps: int,
+    steps_per_family: NDArray[np.int32],
     debug_dir: Path,
 ) -> tuple[np.ndarray, dict]:
     """阶段 C：按 (色相族, 明度档) 取色渲染，叠加同色相轮廓。
 
     perceived 为 :func:`perceive` 的输出字典。
     struct 为 :func:`structure` 的输出字典。
+    steps_per_family 为各族原生长度，支持变长 ramp。
     debug_dir 非空时，每步结果即时保存为 PNG。
 
     返回 (final_bgr, meta)。
@@ -294,17 +318,21 @@ def render(
             img = img.astype(np.uint8) * 255
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)
 
-    ramps = perceived["ramps_bgr"]  # (family_count, steps, 3) BGR
+    ramps = perceived["ramps_bgr"]  # (family_count, max_steps, 3) BGR
     ramp_l = perceived["ramp_l"]
     valid = struct["alpha_down"]
     families = struct["family_down"]
-    steps = ramps.shape[1]
-
-    hard_tiers = np.clip(struct["tier_down"], 0, steps - 1).astype(np.int16)
     safe_family = np.maximum(families, 0)
+    max_tier = np.maximum(steps_per_family[safe_family] - 1, 0)
+
+    hard_tiers = np.minimum(
+        np.maximum(struct["tier_down"], 0), max_tier
+    ).astype(np.int16)
     hard_bgr = ramps[safe_family, hard_tiers].astype(np.float32)
 
-    position = continuous_ramp_position(struct["L_down"], families, ramp_l, valid)
+    position = continuous_ramp_position(
+        struct["L_down"], families, ramp_l, valid, steps_per_family
+    )
     fraction = position - np.floor(position)
     gradient = neighbor_max_difference(struct["L_down"])
 
@@ -321,19 +349,19 @@ def render(
     if dither_method == "pattern":
         pattern_set = PATTERNS[pattern_style]
         dithered_bgr, rendered_steps = _render_pattern(
-            position, families, ramps, dither_mask, pattern_set
+            position, families, ramps, dither_mask, pattern_set, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
     elif dither_method == "bayer":
         dithered_bgr, rendered_steps = _render_bayer(
-            position, families, ramps, dither_mask
+            position, families, ramps, dither_mask, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
     elif dither_method == "floyd_steinberg":
         dithered_bgr, rendered_steps = _render_floyd(
-            position, families, ramps, dither_mask
+            position, families, ramps, dither_mask, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
@@ -346,11 +374,11 @@ def render(
         raise ValueError(f"unknown dither method: {dither_method!r}")
 
     # 轮廓像素统一压到该色相族的最暗档（同族变暗）
-    silhouette_step = int(np.clip(silhouette_dark_step, 0, steps - 1))
     for y, x in np.argwhere(struct["silhouette"]):
         family = families[y, x]
         if family >= 0:
-            final_bgr[y, x] = ramps[family, silhouette_step]
+            step = min(silhouette_dark_step, int(steps_per_family[family]) - 1)
+            final_bgr[y, x] = ramps[family, max(step, 0)]
 
     # 内部细节线比所在像素的档位再暗 internal_delta 档
     internal_delta = max(1, internal_outline_dark_steps)
@@ -368,7 +396,7 @@ def render(
     _save("19_dither_mask", dither_mask)
     _save("20_dithered", dithered_u8)
     _save("21_final", final_u8)
-    _save("22_palette_strip", make_palette_strip(ramps))
+    _save("22_palette_strip", make_palette_strip(ramps, steps_per_family))
 
     return final_u8, {
         "hard_bgr": hard_bgr.astype(np.uint8),
@@ -376,5 +404,5 @@ def render(
         "dither_mask": dither_mask,
         "continuous_position": position,
         "rendered_steps": rendered_steps,
-        "palette_strip": make_palette_strip(ramps),
+        "palette_strip": make_palette_strip(ramps, steps_per_family),
     }
