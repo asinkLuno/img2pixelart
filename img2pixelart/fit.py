@@ -73,9 +73,7 @@ def structure_palette_ramps(
     彩色按色相角贪心聚类，角差距 > hue_gap_degrees 则新建一族。
     """
     bgr_f32 = palette_bgr.astype(np.float32) / 255.0
-    lab: FloatArray = cv2.cvtColor(
-        bgr_f32[None, ...], cv2.COLOR_BGR2LAB
-    )[0]
+    lab: FloatArray = cv2.cvtColor(bgr_f32[None, ...], cv2.COLOR_BGR2LAB)[0]
 
     chroma = np.linalg.norm(lab[:, 1:3], axis=1)
     hue = np.arctan2(lab[:, 2], lab[:, 1])
@@ -221,26 +219,24 @@ def match_families(
     F_tgt = len(target_ramps)
 
     # ── 源族描述符 ──
-    src_neutral = np.array([
-        float(np.linalg.norm(d)) < 1e-6 for d in source_hue_directions
-    ])
-    src_median_l = np.array([
-        float(np.median(r)) for r in source_ramp_l
-    ])
+    src_neutral = np.array(
+        [float(np.linalg.norm(d)) < 1e-6 for d in source_hue_directions]
+    )
+    src_median_l = np.array([float(np.median(r)) for r in source_ramp_l])
 
     src_lab_flat = cv2.cvtColor(
         (source_ramps_bgr.astype(np.float32) / 255.0).reshape(-1, 1, 3),
         cv2.COLOR_BGR2LAB,
     ).reshape(F_src, -1, 3)
-    src_chroma = np.array([
-        float(np.linalg.norm(s[:, 1:3], axis=1).mean()) for s in src_lab_flat
-    ])
+    src_chroma = np.array(
+        [float(np.linalg.norm(s[:, 1:3], axis=1).mean()) for s in src_lab_flat]
+    )
 
     # ── 目标族描述符 ──
     tgt_median_l = np.array([float(np.median(r[0][:, 0])) for r in target_ramps])
-    tgt_chroma = np.array([
-        float(np.linalg.norm(r[0][:, 1:3], axis=1).mean()) for r in target_ramps
-    ])
+    tgt_chroma = np.array(
+        [float(np.linalg.norm(r[0][:, 1:3], axis=1).mean()) for r in target_ramps]
+    )
     tgt_hue: FloatArray = np.zeros((F_tgt, 2), dtype=np.float32)
     for i, (ramp_lab, _) in enumerate(target_ramps):
         ab = ramp_lab[:, 1:3]

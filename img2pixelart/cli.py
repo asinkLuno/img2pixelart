@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import cv2
@@ -119,7 +120,8 @@ def _run_pipeline(
         )
 
         target_ramps_bgr, target_ramp_l = build_target_ramps(
-            palette_ramps, steps=p.ramp_steps,
+            palette_ramps,
+            steps=p.ramp_steps,
         )
 
         new_family, new_tier = remap_families_and_tiers(
@@ -154,14 +156,8 @@ def _run_pipeline(
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
-def main(cfg: DictConfig) -> None:
-    """将图片转换为像素画风格。
-
-    用法:
-      img2pixelart img=test.png
-      img2pixelart img=test.png size=64 perceive.ramp_steps=5
-      img2pixelart img=test.png -m perceive.ramp_steps=3,5
-    """
+def _hydra_main(cfg: DictConfig) -> None:
+    """将图片转换为像素画风格（Hydra pipeline）。"""
     validate_settings(cfg)
 
     img_path = Path(hydra.utils.to_absolute_path(cfg.img))
@@ -182,6 +178,75 @@ def main(cfg: DictConfig) -> None:
         logger.error(f"failed to write output: {out}")
         raise SystemExit(3)
     logger.info("output: {}/{}", Path.cwd(), out)
+
+
+def crop_padding(img_path: Path) -> None:
+    """裁掉图片边缘空白区域，保存为 {stem}_no_padding{ext}。
+
+    有 alpha 通道直接用 alpha 找前景；否则用 Canny 边缘检测定位主体外轮廓。
+    """
+    img = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        logger.error(f"cannot read image: {img_path}")
+        raise SystemExit(1)
+
+    h, w = img.shape[:2]
+
+    # ── 前景遮罩 ──
+    if img.ndim == 3 and img.shape[2] == 4:
+        fg = img[..., 3] >= 128
+    else:
+        gray = cv2.cvtColor(img[..., :3], cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        # ponytail: MORPH_CLOSE 填充边缘间隙形成实心区域，大图可能需要更多 iterations
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        fg = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=3).astype(bool)
+
+    rows = np.any(fg, axis=1)
+    cols = np.any(fg, axis=0)
+    if not rows.any():
+        logger.warning(f"no foreground found in {img_path}, skipping")
+        return
+
+    y_min, y_max = np.where(rows)[0][[0, -1]]
+    x_min, x_max = np.where(cols)[0][[0, -1]]
+
+    margin = max(2, min(h, w) // 20)
+    y_min = max(0, int(y_min) - margin)
+    y_max = min(h, int(y_max) + margin)
+    x_min = max(0, int(x_min) - margin)
+    x_max = min(w, int(x_max) + margin)
+
+    cropped = img[y_min : y_max + 1, x_min : x_max + 1]
+    out_path = img_path.with_stem(img_path.stem + "_no_padding")
+    if not cv2.imwrite(str(out_path), cropped):
+        logger.error(f"failed to write: {out_path}")
+        raise SystemExit(3)
+    logger.info(
+        "cropped {} → {} ({}×{} → {}×{})",
+        img_path.name,
+        out_path.name,
+        w,
+        h,
+        x_max - x_min + 1,
+        y_max - y_min + 1,
+    )
+
+
+def main() -> None:
+    """img2pixelart CLI 调度入口。
+
+    用法:
+      img2pixelart img=test.png                        # 像素画转换
+      img2pixelart crop-padding <image_path>           # 裁边
+    """
+    if len(sys.argv) > 1 and sys.argv[1] == "crop-padding":
+        if len(sys.argv) < 3:
+            print("usage: img2pixelart crop-padding <image_path>", file=sys.stderr)
+            raise SystemExit(2)
+        crop_padding(Path(sys.argv[2]))
+    else:
+        _hydra_main()
 
 
 if __name__ == "__main__":

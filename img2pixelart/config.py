@@ -178,17 +178,19 @@ def validate_settings(cfg: DictConfig) -> None:
     if p.ramp_steps < 3:
         errors.append(f"perceive.ramp_steps={p.ramp_steps} 必须 >= 3")
     if p.ramp_minimum_span < 0 or p.ramp_minimum_span > 100:
-        errors.append(f"perceive.ramp_minimum_span={p.ramp_minimum_span} 必须位于 [0, 100]")
-    if not 0 <= p.ramp_low_quantile < p.ramp_high_quantile <= 1:
         errors.append(
-            "perceive ramp 分位参数必须满足 0 <= low < high <= 1"
+            f"perceive.ramp_minimum_span={p.ramp_minimum_span} 必须位于 [0, 100]"
         )
+    if not 0 <= p.ramp_low_quantile < p.ramp_high_quantile <= 1:
+        errors.append("perceive ramp 分位参数必须满足 0 <= low < high <= 1")
     if p.ramp_minimum_family_pixels < 1:
         errors.append(
             f"perceive.ramp_minimum_family_pixels={p.ramp_minimum_family_pixels} 必须 >= 1"
         )
     if not 0 <= p.ramp_chroma_quantile <= 1:
-        errors.append(f"perceive.ramp_chroma_quantile={p.ramp_chroma_quantile} 必须位于 [0, 1]")
+        errors.append(
+            f"perceive.ramp_chroma_quantile={p.ramp_chroma_quantile} 必须位于 [0, 1]"
+        )
     if not 0 <= p.ramp_endpoint_chroma_scale <= 1:
         errors.append(
             f"perceive.ramp_endpoint_chroma_scale={p.ramp_endpoint_chroma_scale} 必须位于 [0, 1]"
@@ -198,7 +200,9 @@ def validate_settings(cfg: DictConfig) -> None:
     if p.canny_low < 0 or p.canny_high < 0:
         errors.append("perceive canny 阈值必须 >= 0")
     if p.canny_low > p.canny_high:
-        errors.append(f"perceive canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}")
+        errors.append(
+            f"perceive canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}"
+        )
     if not 0 <= p.alpha_threshold <= 255:
         errors.append(f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]")
 
@@ -228,9 +232,7 @@ def validate_settings(cfg: DictConfig) -> None:
             f"render.dither_method={r.dither_method!r} 必须是 none | bayer | floyd_steinberg"
         )
     if not 0.0 <= r.dither_fraction_min < r.dither_fraction_max <= 1.0:
-        errors.append(
-            "render dither 分位参数必须满足 0 <= min < max <= 1"
-        )
+        errors.append("render dither 分位参数必须满足 0 <= min < max <= 1")
     if r.dither_gradient_min < 0:
         errors.append(f"render.dither_gradient_min={r.dither_gradient_min} 必须 >= 0")
     if r.silhouette_dark_step < 0:
@@ -242,5 +244,3 @@ def validate_settings(cfg: DictConfig) -> None:
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
-
-
