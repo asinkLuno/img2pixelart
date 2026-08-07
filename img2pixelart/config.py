@@ -24,6 +24,7 @@ class PerceiveConfig:
     minimum_fit_pixels: int
     maximum_fit_pixels: int
     random_seed: int
+    spherical_kmeans_iterations: int
     ramp_steps: int
     ramp_minimum_span: float
     ramp_low_quantile: float
@@ -62,6 +63,7 @@ def validate_settings(cfg: DictConfig) -> None:
         "minimum_fit_pixels",
         "maximum_fit_pixels",
         "random_seed",
+        "spherical_kmeans_iterations",
         "ramp_steps",
         "ramp_minimum_span",
         "ramp_low_quantile",
@@ -113,6 +115,11 @@ def validate_settings(cfg: DictConfig) -> None:
             f"minimum_fit_pixels ({p.minimum_fit_pixels})"
         )
 
+    if p.spherical_kmeans_iterations < 1:
+        errors.append(
+            f"perceive.spherical_kmeans_iterations={p.spherical_kmeans_iterations} 必须 >= 1"
+        )
+
     if p.ramp_steps < 3:
         errors.append(f"perceive.ramp_steps={p.ramp_steps} 必须 >= 3")
 
@@ -156,9 +163,7 @@ def validate_settings(cfg: DictConfig) -> None:
         )
 
     if not 0 <= p.alpha_threshold <= 255:
-        errors.append(
-            f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]"
-        )
+        errors.append(f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]")
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))

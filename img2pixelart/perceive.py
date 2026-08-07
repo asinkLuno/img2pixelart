@@ -3,6 +3,8 @@
 所有可配置参数由 Hydra 配置显式传入，本模块不设代码默认值。
 """
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
@@ -85,6 +87,57 @@ def _assign_nearest_hue(
     return np.argmax(similarities, axis=-1).astype(np.int16)
 
 
+def spherical_kmeans_2d(
+    directions: FloatArray,
+    cluster_count: int,
+    iterations: int,
+    random_seed: int,
+) -> tuple[LabelArray, FloatArray]:
+    """在单位圆上对二维方向向量做 spherical K-Means 聚类。
+
+    返回 (labels, centers)。
+    """
+    if directions.ndim != 2 or directions.shape[1] != 2:
+        raise ValueError("directions 必须具有形状 (N, 2)")
+    if cluster_count < 1 or cluster_count > len(directions):
+        raise ValueError("cluster_count 必须位于 [1, N]")
+
+    directions = _normalize_vectors(np.asarray(directions, dtype=np.float32))
+    rng = np.random.default_rng(random_seed)
+    initial_indices = rng.choice(len(directions), size=cluster_count, replace=False)
+    centers = directions[initial_indices].copy()
+    labels = np.full(len(directions), -1, dtype=np.int16)
+
+    for _ in range(iterations):
+        similarities = directions @ centers.T
+        new_labels = np.argmax(similarities, axis=1).astype(np.int16)
+
+        if np.array_equal(new_labels, labels):
+            break
+        labels = new_labels
+
+        new_centers = np.empty_like(centers)
+        for cluster_index in range(cluster_count):
+            members = directions[labels == cluster_index]
+            if len(members) == 0:
+                # 用与现有中心最不相似的点重建空簇。
+                nearest_similarity = np.max(directions @ centers.T, axis=1)
+                replacement_index = int(np.argmin(nearest_similarity))
+                new_centers[cluster_index] = directions[replacement_index]
+                continue
+
+            resultant = members.sum(axis=0)
+            norm = float(np.linalg.norm(resultant))
+            if norm <= 1e-6:
+                replacement_index = int(rng.integers(len(directions)))
+                new_centers[cluster_index] = directions[replacement_index]
+            else:
+                new_centers[cluster_index] = resultant / norm
+        centers = new_centers
+
+    return labels, centers.astype(np.float32)
+
+
 # ---------------------------------------------------------------------------
 # public API
 # ---------------------------------------------------------------------------
@@ -100,6 +153,7 @@ def cluster_hue_families(
     minimum_fit_pixels: int,
     maximum_fit_pixels: int,
     random_seed: int,
+    spherical_kmeans_iterations: int,
 ):
     """按色相角将前景像素聚成色相族，低色度像素归入中性族。
 
@@ -145,26 +199,13 @@ def cluster_hue_families(
                 fit_directions.mean(axis=0, keepdims=True)
             )
         else:
-            # OpenCV 的全局 RNG 控制 k-means 初始化。
-            # ponytail: 全局 RNG，并发处理多张图时加锁或改用局部聚类实现。
-            cv2.setRNGSeed(random_seed)
-
-            criteria = (
-                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
-                50,
-                1e-4,
+            _, centers = spherical_kmeans_2d(
+                fit_directions,
+                cluster_count=cluster_count,
+                iterations=spherical_kmeans_iterations,
+                random_seed=random_seed,
             )
-
-            _, _, centers = cv2.kmeans(
-                data=np.ascontiguousarray(fit_directions, dtype=np.float32),
-                K=cluster_count,
-                bestLabels=None,
-                criteria=criteria,
-                attempts=6,
-                flags=cv2.KMEANS_PP_CENTERS,
-            )
-
-            chromatic_centers = _normalize_vectors(centers)
+            chromatic_centers = centers
             chromatic_centers = _merge_hue_centers(
                 chromatic_centers,
                 angular_threshold_degrees=merge_angle_degrees,
@@ -414,6 +455,7 @@ def perceive(
     minimum_fit_pixels: int,
     maximum_fit_pixels: int,
     random_seed: int,
+    spherical_kmeans_iterations: int,
     ramp_steps: int,
     ramp_minimum_span: float,
     ramp_low_quantile: float,
@@ -425,16 +467,22 @@ def perceive(
     canny_low: int,
     canny_high: int,
     alpha_threshold: int,
+    debug_dir: Path,
 ):
     """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
 
     所有参数由 Hydra 配置显式传入。
+    debug_dir 非空时，每步结果即时保存为 PNG。
     """
+
+    def _save(name: str, img: np.ndarray) -> None:
+        if img.dtype == bool:
+            img = img.astype(np.uint8) * 255
+        cv2.imwrite(str(debug_dir / f"{name}.png"), img)
+
     # ── 输入校验 ──
     if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
-        raise ValueError(
-            f"bgra 必须为 (H, W, 3) 或 (H, W, 4)，实际 shape={bgra.shape}"
-        )
+        raise ValueError(f"bgra 必须为 (H, W, 3) 或 (H, W, 4)，实际 shape={bgra.shape}")
     if bgra.size == 0:
         raise ValueError("输入图像为空")
     if bgra.dtype != np.uint8:
@@ -450,9 +498,7 @@ def perceive(
         # ponytail: cv2.inpaint 对大面积透明效果有限，严重时改用 alpha 加权统计。
         transparent = ~foreground
         if transparent.any() and foreground.any():
-            bgr = cv2.inpaint(
-                bgr, transparent.astype(np.uint8), 3, cv2.INPAINT_TELEA
-            )
+            bgr = cv2.inpaint(bgr, transparent.astype(np.uint8), 3, cv2.INPAINT_TELEA)
     else:
         bgr = bgra.copy()
         foreground = np.ones(bgr.shape[:2], dtype=bool)
@@ -460,7 +506,11 @@ def perceive(
 
     # ── 去噪 + 色块化 ──
     denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)
+    _save("01_original", bgr)
+    _save("02_denoised", denoised)
+
     blocks = cv2.pyrMeanShiftFiltering(denoised, mean_shift_sp, mean_shift_sr)
+    _save("03_blocks", blocks)
 
     # ── 补正方形（记录偏移和原始尺寸） ──
     h, w = bgr.shape[:2]
@@ -490,7 +540,22 @@ def perceive(
         minimum_fit_pixels=minimum_fit_pixels,
         maximum_fit_pixels=maximum_fit_pixels,
         random_seed=random_seed,
+        spherical_kmeans_iterations=spherical_kmeans_iterations,
     )
+
+    # families 可视化
+    fam_viz = np.zeros((*family_labels.shape, 3), dtype=np.uint8)
+    fam_colors = [
+        (255, 0, 0),
+        (0, 150, 255),
+        (128, 128, 128),
+        (255, 200, 0),
+        (200, 0, 255),
+        (0, 200, 100),
+    ]
+    for fi in range(len(hue_directions_ab)):
+        fam_viz[family_labels == fi] = fam_colors[fi % len(fam_colors)]
+    _save("04_families", fam_viz)
 
     # ── 明度阶梯色板 ──
     ramps_bgr, ramp_l = build_adaptive_ramps(
@@ -508,6 +573,16 @@ def perceive(
         maximum_chroma=ramp_maximum_chroma,
     )
 
+    # palette
+    ramps_u8 = ramps_bgr.astype(np.uint8)
+    N, steps = ramps_u8.shape[:2]
+    bh, bw = 24, 48
+    pal = np.zeros((N * bh, steps * bw, 3), dtype=np.uint8)
+    for fi in range(N):
+        for si in range(steps):
+            pal[fi * bh : (fi + 1) * bh, si * bw : (si + 1) * bw] = ramps_u8[fi, si]
+    _save("05_palette", pal)
+
     # ── 明度分档 ──
     tier = assign_lightness_tiers(l_smooth, family_labels, ramp_l, foreground)
 
@@ -517,6 +592,19 @@ def perceive(
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(foreground.astype(np.uint8), kernel).astype(bool)
     canny[~eroded] = 0
+    _save("06_canny", canny)
+
+    # reconstructed
+    h, w = tier.shape
+    recon = np.zeros((h, w, 3), dtype=np.uint8)
+    for fi in range(N):
+        mask = (family_labels == fi) & (tier >= 0)
+        if not mask.any():
+            continue
+        for si in range(steps):
+            recon[mask & (tier == si)] = ramps_u8[fi, si]
+    recon[canny > 0] = [0, 0, 0]
+    _save("07_reconstructed", recon)
 
     return {
         "original": bgr,

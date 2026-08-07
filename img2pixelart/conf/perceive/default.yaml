@@ -11,6 +11,7 @@ minimum_lightness: 8.0
 minimum_fit_pixels: 16
 maximum_fit_pixels: 30000
 random_seed: 11
+spherical_kmeans_iterations: 20
 ramp_steps: 5
 ramp_minimum_span: 42.0
 ramp_low_quantile: 0.04

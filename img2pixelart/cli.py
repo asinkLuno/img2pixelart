@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from typing import Annotated
 
@@ -37,6 +38,11 @@ def main(
     if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
         raise ValueError(f"cannot read image: {img}")
 
+    debug_dir = img.parent / img.stem
+    if debug_dir.exists():
+        shutil.rmtree(debug_dir)
+    debug_dir.mkdir(parents=True)
+
     p = cfg.perceive
     perceived = perceive(
         bgra,
@@ -51,6 +57,7 @@ def main(
         minimum_fit_pixels=p.minimum_fit_pixels,
         maximum_fit_pixels=p.maximum_fit_pixels,
         random_seed=p.random_seed,
+        spherical_kmeans_iterations=p.spherical_kmeans_iterations,
         ramp_steps=p.ramp_steps,
         ramp_minimum_span=p.ramp_minimum_span,
         ramp_low_quantile=p.ramp_low_quantile,
@@ -62,6 +69,7 @@ def main(
         canny_low=p.canny_low,
         canny_high=p.canny_high,
         alpha_threshold=p.alpha_threshold,
+        debug_dir=debug_dir,
     )
     logger.info("perceive result keys: {}", list(perceived.keys()))
 
