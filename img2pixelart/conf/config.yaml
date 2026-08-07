@@ -2,6 +2,8 @@
 defaults:
   - _self_
   - perceive: default
+  - structure: default
+  - render: default
 
 # 全局开关，可用命令行覆盖，如 --setting auto_background=true
 auto_background: false
