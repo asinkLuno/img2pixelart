@@ -1,0 +1,7 @@
+# 全局 settings —— 由 hydra-core 加载（img2pixelart/cli.py -> load_settings）
+defaults:
+  - _self_
+  - perceive: default
+
+# 全局开关，可用命令行覆盖，如 --setting auto_background=true
+auto_background: false

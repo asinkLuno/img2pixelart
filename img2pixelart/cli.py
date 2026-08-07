@@ -1,40 +1,52 @@
 from pathlib import Path
+from typing import Annotated
+
 import cv2
 import cyclopts
 from loguru import logger
 import numpy as np
+from omegaconf import DictConfig, OmegaConf
 from matplotlib import pyplot as plt
+
+from .config import load_settings
+from .perceive import perceive
 
 app = cyclopts.App(name="img2pixelart")
 
 
-def estimate_foreground_mask(img,):
-    # TODO: 主体检测
-    return no_background_img
-
-
-def perceive(bgra:np.ndarray,denoise_d,denoise_sigma,mean_shift_sp,mean_shift_sr):
-    has_alpha=bgra.ndim==3 and bgra.shape[-1]==4
-    bgr=bgra[...,:3].copy() if has_alpha else bgra.copy()
-    source_alpha=bgra[...,3] if has_alpha else None
-
-    denoised=cv2.bilateralFilter(bgr,denoise_d, denoise_sigma,denoise_sigma)
-    blocks=cv2.pyrMeanShiftFiltering(denoised,mean_shift_sp,mean_shift_sr)
-
-    h,w=bgr.shape[:2]
-    side=max(h,w)
-
-
 @app.default
-def main(img: Path, auto_background: bool = False) -> None:
-    """将图片转换为像素画风格。"""
-    img=cv2.imread(str(img),cv2.IMREAD_UNCHANGED)
-    if img.ndim!=3 or img.shape[2] not in (3,4):
-        raise ValueError(f"cannot read image: {img}")
+def main(
+    img: Path,
+    auto_background: bool = False,
+    setting: Annotated[list[str] | None, cyclopts.Parameter(allow_repeating=True)] = None,
+) -> None:
+    """将图片转换为像素画风格。
+
+    算法 settings 由 conf/config.yaml（hydra-core）提供，可用 --setting key=value 覆盖。
+    """
+    cfg = load_settings(setting)
+    logger.info("settings loaded:\n{}", OmegaConf.to_yaml(cfg))
 
     if auto_background:
-        img=estimate_foreground_mask(img)
+        cfg.auto_background = True
+    logger.info("auto_background = {}", cfg.auto_background)
+    if cfg.auto_background:
+        logger.warning("auto_background 开关尚未接入像素画管线，当前为 no-op")
+
+    bgra = cv2.imread(str(img), cv2.IMREAD_UNCHANGED)
+    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
+        raise ValueError(f"cannot read image: {img}")
+
+    p = cfg.perceive
+    blocks, source_alpha = perceive(
+        bgra,
+        denoise_d=p.denoise_d,
+        denoise_sigma=p.denoise_sigma,
+        mean_shift_sp=p.mean_shift_sp,
+        mean_shift_sr=p.mean_shift_sr,
+    )
+    logger.info("perceive: blocks={} alpha={}", blocks.shape, source_alpha is not None)
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     app()
