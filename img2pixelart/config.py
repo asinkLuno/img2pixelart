@@ -40,7 +40,6 @@ class PerceiveConfig:
 
 @dataclass
 class StructureConfig:
-    size: int
     alpha_coverage: float
     edge_coverage: float
     edge_min_length: int
@@ -66,7 +65,6 @@ class RenderConfig:
 
 @dataclass
 class Settings:
-    auto_background: bool
     perceive: PerceiveConfig
     structure: StructureConfig
     render: RenderConfig
@@ -125,7 +123,6 @@ def validate_settings(cfg: DictConfig) -> None:
         s,
         "structure",
         [
-            "size",
             "alpha_coverage",
             "edge_coverage",
             "edge_min_length",
@@ -209,8 +206,6 @@ def validate_settings(cfg: DictConfig) -> None:
         errors.append(f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]")
 
     # ── structure 业务规则 ──
-    if s.size < 8:
-        errors.append(f"structure.size={s.size} 必须 >= 8")
     if not 0.0 < s.alpha_coverage <= 1.0:
         errors.append(f"structure.alpha_coverage={s.alpha_coverage} 必须位于 (0, 1]")
     if not 0.0 <= s.edge_coverage <= 1.0:
@@ -255,7 +250,7 @@ def validate_settings(cfg: DictConfig) -> None:
 def load_settings(overrides: list[str] | None = None) -> DictConfig:
     """用 hydra-core 从 conf/ 加载 settings 并做结构 + 业务校验。
 
-    overrides 为 hydra 覆盖项（dotlist），如 ["perceive.denoise_d=5", "auto_background=true"]。
+    overrides 为 hydra 覆盖项（dotlist），如 ["perceive.denoise_d=5"]。
     返回 struct 模式 DictConfig：未知 key / 类型错误在加载时直接报错，
     缺失字段与取值范围问题由 validate_settings 汇总为 ValueError。
     """

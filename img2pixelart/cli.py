@@ -19,7 +19,7 @@ app = cyclopts.App(name="img2pixelart")
 @app.default
 def main(
     img: Path,
-    auto_background: bool = False,
+    size: int = 96,
     setting: Annotated[
         list[str] | None, cyclopts.Parameter(allow_repeating=True)
     ] = None,
@@ -30,12 +30,6 @@ def main(
     """
     cfg = load_settings(setting)
     logger.info("settings loaded:\n{}", OmegaConf.to_yaml(cfg))
-
-    if auto_background:
-        cfg.auto_background = True
-    logger.info("auto_background = {}", cfg.auto_background)
-    if cfg.auto_background:
-        logger.warning("auto_background 开关尚未接入像素画管线，当前为 no-op")
 
     bgra = cv2.imread(str(img), cv2.IMREAD_UNCHANGED)
     if bgra is None:
@@ -87,7 +81,7 @@ def main(
     s = cfg.structure
     struct = structure(
         perceived,
-        size=s.size,
+        size=size,
         alpha_coverage=s.alpha_coverage,
         edge_coverage=s.edge_coverage,
         edge_min_length=s.edge_min_length,
@@ -103,8 +97,8 @@ def main(
     )
     logger.info(
         "structure: {}×{} grid, {} fg pixels, small_cleanup={}",
-        s.size,
-        s.size,
+        size,
+        size,
         struct["alpha_down"].sum(),
         struct["small_cleanup_applied"],
     )
