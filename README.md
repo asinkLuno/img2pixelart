@@ -5,16 +5,65 @@
 ## 安装
 
 ```bash
-uv sync
-uv pip install hydra-joblib-launcher   # 多线程 multirun 需要
+pip install img2pixelart
 ```
+
+或从源码安装：
+
+```bash
+uv sync
+```
+
+## 效果
+
+<p align="center">
+  <img src="docs/assets/banana_orig.png" width="128"> →
+  <img src="docs/assets/banana_96.png" width="96">
+  <img src="docs/assets/banana_64.png" width="64">
+  <img src="docs/assets/banana_48.png" width="48">
+  <img src="docs/assets/banana_32.png" width="32">
+  <br>
+  <img src="docs/assets/sakura_orig.png" width="128"> →
+  <img src="docs/assets/sakura_96.png" width="96">
+  <img src="docs/assets/sakura_64.png" width="64">
+  <img src="docs/assets/sakura_48.png" width="48">
+  <img src="docs/assets/sakura_32.png" width="32">
+  <br>
+  <img src="docs/assets/chair_orig.png" width="128"> →
+  <img src="docs/assets/chair_96.png" width="96">
+  <img src="docs/assets/chair_64.png" width="64">
+  <img src="docs/assets/chair_48.png" width="48">
+  <img src="docs/assets/chair_32.png" width="32">
+</p>
+
+不同色相族数量（`requested_groups`），尺寸固定 96px：
+
+<p align="center">
+  <img src="docs/assets/banana_orig.png" width="128"> →
+  <img src="docs/assets/banana_g1.png" width="96">
+  <img src="docs/assets/banana_g2.png" width="96">
+  <img src="docs/assets/banana_g3.png" width="96">
+  <img src="docs/assets/banana_g4.png" width="96">
+  <br>
+  <img src="docs/assets/sakura_orig.png" width="128"> →
+  <img src="docs/assets/sakura_g1.png" width="96">
+  <img src="docs/assets/sakura_g2.png" width="96">
+  <img src="docs/assets/sakura_g3.png" width="96">
+  <img src="docs/assets/sakura_g4.png" width="96">
+  <br>
+  <img src="docs/assets/chair_orig.png" width="128"> →
+  <img src="docs/assets/chair_g1.png" width="96">
+  <img src="docs/assets/chair_g2.png" width="96">
+  <img src="docs/assets/chair_g3.png" width="96">
+  <img src="docs/assets/chair_g4.png" width="96">
+</p>
 
 ## 用法
 
 ### 单张转换
 
 ```bash
-uv run img2pixelart img=tests/apple.jpg size=96
+img2pixelart img=tests/apple.jpg size=96
 ```
 
 输出在当前目录的 `result.png`。
@@ -24,7 +73,7 @@ uv run img2pixelart img=tests/apple.jpg size=96
 去掉图片四周空白区域：
 
 ```bash
-uv run img2pixelart crop-padding tests/apple.jpg
+img2pixelart crop-padding tests/apple.jpg
 # → tests/apple_no_padding.jpg
 ```
 
@@ -34,7 +83,7 @@ uv run img2pixelart crop-padding tests/apple.jpg
 
 ```bash
 # 渐变层次 × 抖动风格 × 描边，81 种组合
-uv run img2pixelart -m \
+img2pixelart -m \
   img=tests/apple.jpg \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
@@ -48,7 +97,7 @@ uv run img2pixelart -m \
 加 Joblib launcher，`n_jobs=-1` 用满所有 CPU：
 
 ```bash
-uv run img2pixelart -m \
+img2pixelart -m \
   img=tests/apple.jpg \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
