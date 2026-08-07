@@ -268,13 +268,9 @@ def validate_settings(cfg: DictConfig) -> None:
     if f.chroma_floor < 0:
         errors.append(f"fit.chroma_floor={f.chroma_floor} 必须 >= 0")
     if not 0 <= f.hue_gap_degrees <= 180:
-        errors.append(
-            f"fit.hue_gap_degrees={f.hue_gap_degrees} 必须位于 [0, 180]"
-        )
+        errors.append(f"fit.hue_gap_degrees={f.hue_gap_degrees} 必须位于 [0, 180]")
     if f.auto_chroma_floor < 0:
-        errors.append(
-            f"fit.auto_chroma_floor={f.auto_chroma_floor} 必须 >= 0"
-        )
+        errors.append(f"fit.auto_chroma_floor={f.auto_chroma_floor} 必须 >= 0")
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))

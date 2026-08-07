@@ -325,9 +325,9 @@ def render(
     safe_family = np.maximum(families, 0)
     max_tier = np.maximum(steps_per_family[safe_family] - 1, 0)
 
-    hard_tiers = np.minimum(
-        np.maximum(struct["tier_down"], 0), max_tier
-    ).astype(np.int16)
+    hard_tiers = np.minimum(np.maximum(struct["tier_down"], 0), max_tier).astype(
+        np.int16
+    )
     hard_bgr = ramps[safe_family, hard_tiers].astype(np.float32)
 
     position = continuous_ramp_position(

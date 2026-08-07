@@ -155,9 +155,7 @@ def _down_family_weighted_L(
         for ix, (x0, x1) in enumerate(cols):
             local_fg = foreground[y0:y1, x0:x1]
             if not local_fg.any():
-                out[iy, ix] = float(
-                    l_channel[y0:y1, x0:x1].mean()
-                )
+                out[iy, ix] = float(l_channel[y0:y1, x0:x1].mean())
                 continue
             local_family = family_labels[y0:y1, x0:x1]
             target = family_down[iy, ix]
@@ -165,9 +163,7 @@ def _down_family_weighted_L(
             if mask.any():
                 out[iy, ix] = float(l_channel[y0:y1, x0:x1][mask].mean())
             else:
-                out[iy, ix] = float(
-                    l_channel[y0:y1, x0:x1][local_fg].mean()
-                )
+                out[iy, ix] = float(l_channel[y0:y1, x0:x1][local_fg].mean())
 
     return out
 
@@ -491,9 +487,7 @@ def structure(
         perceived["foreground"],
         size,
     )
-    tier_down = _quantize_tiers(
-        l_down, family_down, alpha_down, perceived["ramp_l"]
-    )
+    tier_down = _quantize_tiers(l_down, family_down, alpha_down, perceived["ramp_l"])
 
     _save("09_alpha_down", alpha_down.astype(np.uint8) * 255)
 
