@@ -4,9 +4,7 @@ from typing import Annotated
 import cv2
 import cyclopts
 from loguru import logger
-import numpy as np
-from omegaconf import DictConfig, OmegaConf
-from matplotlib import pyplot as plt
+from omegaconf import OmegaConf
 
 from .config import load_settings
 from .perceive import perceive
@@ -40,7 +38,7 @@ def main(
         raise ValueError(f"cannot read image: {img}")
 
     p = cfg.perceive
-    blocks, source_alpha = perceive(
+    perceived = perceive(
         bgra,
         denoise_d=p.denoise_d,
         denoise_sigma=p.denoise_sigma,
@@ -63,8 +61,9 @@ def main(
         ramp_maximum_chroma=p.ramp_maximum_chroma,
         canny_low=p.canny_low,
         canny_high=p.canny_high,
+        alpha_threshold=p.alpha_threshold,
     )
-    logger.info("perceive result keys: {}", list(blocks.keys()))
+    logger.info("perceive result keys: {}", list(perceived.keys()))
 
 
 if __name__ == "__main__":

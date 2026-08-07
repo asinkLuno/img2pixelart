@@ -21,3 +21,4 @@ ramp_endpoint_chroma_scale: 0.78
 ramp_maximum_chroma: 80.0
 canny_low: 65
 canny_high: 155
+alpha_threshold: 128

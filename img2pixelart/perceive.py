@@ -1,12 +1,28 @@
-from numpy.char import center
+"""感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 边缘。
+
+所有可配置参数由 Hydra 配置显式传入，本模块不设代码默认值。
+"""
+
 import cv2
 import numpy as np
 from numpy.typing import NDArray
 
-
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+
+def _bgr_u8_to_lab_f32(bgr: np.ndarray) -> FloatArray:
+    """uint8 BGR [0,255] → float32 CIE Lab (L: 0–100, a,b 以零为中心)。"""
+    if bgr.dtype != np.uint8:
+        raise TypeError(f"期望 uint8 BGR，实际为 {bgr.dtype}")
+    bgr_f32 = bgr.astype(np.float32) / 255.0
+    return cv2.cvtColor(bgr_f32, cv2.COLOR_BGR2LAB)
 
 
 def _pad_to_square(img, side_len):
@@ -26,9 +42,7 @@ def _normalize_vectors(vectors: FloatArray) -> FloatArray:
 
 
 def _merge_hue_centers(centers: FloatArray, angular_threshold_degrees: float):
-    """
-    合并色相角距离过近的单位向量中心
-    """
+    """合并色相角距离过近的单位向量中心。"""
     if len(centers) <= 1:
         return centers.astype(np.float32, copy=False)
     centers = _normalize_vectors(np.asarray(centers, dtype=np.float32))
@@ -67,10 +81,13 @@ def _assign_nearest_hue(
 ) -> LabelArray:
     """把每个 a/b 向量分配给色相角最近的中心。"""
     directions = _normalize_vectors(ab)
-
-    # 单位向量的点积越大，夹角越小。
     similarities = directions @ centers.T
     return np.argmax(similarities, axis=-1).astype(np.int16)
+
+
+# ---------------------------------------------------------------------------
+# public API
+# ---------------------------------------------------------------------------
 
 
 def cluster_hue_families(
@@ -84,8 +101,18 @@ def cluster_hue_families(
     maximum_fit_pixels: int,
     random_seed: int,
 ):
-    """
-    按色相角将前景像素聚成若干色相族
+    """按色相角将前景像素聚成色相族，低色度像素归入中性族。
+
+    返回 (labels, hue_directions_ab)。
+
+    labels:
+        -1 = 背景
+        0..C-1 = 彩色族
+        C = 中性族（色度不足的前景像素）
+
+    hue_directions_ab:
+        单位色相方向 (C+1, 2)，最后一行是中性族 ``[0, 0]``。
+        若无前景则返回 ``(0, 2)`` 空数组。
     """
     labels = np.full(foreground.shape, -1, dtype=np.int16)
     visible_lab = lab[foreground]
@@ -96,65 +123,79 @@ def cluster_hue_families(
     visible_ab = visible_lab[:, 1:3]
     visible_chroma = np.linalg.norm(visible_ab, axis=1)
 
-    fit_mask = (visible_chroma >= chroma_floor) & (
+    # ── 彩色像素聚类 ──
+    chromatic_fit = (visible_chroma >= chroma_floor) & (
         visible_lab[:, 0] >= minimum_lightness
     )
-    fit_ab = visible_ab[fit_mask]
+    fit_ab = visible_ab[chromatic_fit]
 
-    # 没有足够的有效彩色像素时，不应拿灰色像素强行拟合色相。
-    if len(fit_ab) < minimum_fit_pixels:
-        return labels, np.empty((0, 2), dtype=np.float32)
+    chromatic_centers: FloatArray | None = None
 
-    if len(fit_ab) > maximum_fit_pixels:
-        rng = np.random.default_rng(random_seed)
-        indices = rng.choice(
-            len(fit_ab),
-            size=maximum_fit_pixels,
-            replace=False,
-        )
-        fit_ab = fit_ab[indices]
+    if len(fit_ab) >= minimum_fit_pixels:
+        if len(fit_ab) > maximum_fit_pixels:
+            rng = np.random.default_rng(random_seed)
+            indices = rng.choice(len(fit_ab), size=maximum_fit_pixels, replace=False)
+            fit_ab = fit_ab[indices]
 
-    fit_directions = _normalize_vectors(fit_ab)
-    cluster_count = min(requested_groups, len(fit_directions))
+        fit_directions = _normalize_vectors(fit_ab)
+        cluster_count = min(requested_groups, len(fit_directions))
 
-    if cluster_count == 1:
-        centers = _normalize_vectors(fit_directions.mean(axis=0, keepdims=True))
+        if cluster_count == 1:
+            chromatic_centers = _normalize_vectors(
+                fit_directions.mean(axis=0, keepdims=True)
+            )
+        else:
+            # OpenCV 的全局 RNG 控制 k-means 初始化。
+            # ponytail: 全局 RNG，并发处理多张图时加锁或改用局部聚类实现。
+            cv2.setRNGSeed(random_seed)
+
+            criteria = (
+                cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
+                50,
+                1e-4,
+            )
+
+            _, _, centers = cv2.kmeans(
+                data=np.ascontiguousarray(fit_directions, dtype=np.float32),
+                K=cluster_count,
+                bestLabels=None,
+                criteria=criteria,
+                attempts=6,
+                flags=cv2.KMEANS_PP_CENTERS,
+            )
+
+            chromatic_centers = _normalize_vectors(centers)
+            chromatic_centers = _merge_hue_centers(
+                chromatic_centers,
+                angular_threshold_degrees=merge_angle_degrees,
+            )
+
+    # ── 建立完整色相方向表：彩色族 + 中性族 ──
+    if chromatic_centers is not None and len(chromatic_centers) > 0:
+        chromatic_count = len(chromatic_centers)
+        hue_directions = np.zeros((chromatic_count + 1, 2), dtype=np.float32)
+        hue_directions[:chromatic_count] = chromatic_centers
+        neutral_index = chromatic_count
     else:
-        # OpenCV 的全局 RNG 控制 k-means 初始化。
-        cv2.setRNGSeed(random_seed)
+        # 纯灰度图：只有中性族。
+        hue_directions = np.zeros((1, 2), dtype=np.float32)
+        chromatic_count = 0
+        neutral_index = 0
 
-        criteria = (
-            cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_MAX_ITER,
-            50,
-            1e-4,
+    # ── 分配彩色族标签 ──
+    if chromatic_count > 0:
+        chromatic_mask = foreground & (
+            np.linalg.norm(lab[..., 1:3], axis=-1) >= chroma_floor
+        )
+        labels[chromatic_mask] = _assign_nearest_hue(
+            lab[chromatic_mask, 1:3], hue_directions[:chromatic_count]
         )
 
-        _, _, centers = cv2.kmeans(
-            data=np.ascontiguousarray(fit_directions, dtype=np.float32),
-            K=cluster_count,
-            bestLabels=None,
-            criteria=criteria,
-            attempts=6,
-            flags=cv2.KMEANS_PP_CENTERS,
-        )
+    # ── 分配中性族标签 ──
+    neutral_mask = foreground & (labels == -1)
+    labels[neutral_mask] = neutral_index
 
-        centers = _normalize_vectors(centers)
-        centers = _merge_hue_centers(
-            centers,
-            angular_threshold_degrees=merge_angle_degrees,
-        )
-
-    # 只给色度足够高的前景像素分配色相标签。
-    chromatic_mask = foreground & (
-        np.linalg.norm(lab[..., 1:3], axis=-1) >= chroma_floor
-    )
-
-    labels[chromatic_mask] = _assign_nearest_hue(
-        lab[chromatic_mask, 1:3],
-        centers,
-    )
-
-    return labels, centers
+    return labels, hue_directions
 
 
 def _enforce_span(
@@ -190,13 +231,6 @@ def _enforce_span(
     return max(0.0, low), min(100.0, high)
 
 
-def _lab_to_bgr(lab: FloatArray) -> FloatArray:
-    """将标准 float32 CIE Lab 转换为 OpenCV BGR，输出范围为 [0, 255]。"""
-    lab = np.ascontiguousarray(lab, dtype=np.float32)
-    bgr = cv2.cvtColor(lab[None, ...], cv2.COLOR_LAB2BGR)[0]
-    return np.clip(bgr * 255.0, 0.0, 255.0).astype(np.float32)
-
-
 def build_adaptive_ramps(
     lab: FloatArray,
     foreground: BoolArray,
@@ -211,17 +245,13 @@ def build_adaptive_ramps(
     endpoint_chroma_scale: float,
     maximum_chroma: float,
 ) -> tuple[FloatArray, FloatArray]:
-    """为每个色相族构建具有稳定色相的自适应明度阶梯。
+    """为每个色相族（含中性族）构建明度阶梯色板。
 
-    `hue_directions_ab` 应为 a/b 平面上的单位色相方向，而不是实际的
-    Lab a/b 中心。每个族的实际色度从该族原始像素中估计。
+    ``hue_directions_ab`` 是单位色相方向 (family_count, 2)；中性族为 ``[0, 0]``。
 
     返回：
-        ramps_bgr:
-            形状为 ``(family_count, steps, 3)`` 的 OpenCV BGR 色板，
-            数值范围为 ``[0, 255]``。
-        ramp_l:
-            形状为 ``(family_count, steps)`` 的 Lab 明度值。
+        ramps_bgr: ``(family_count, steps, 3)`` BGR 色板，范围 ``[0, 255]``。
+        ramp_l: ``(family_count, steps)`` Lab 明度值。
     """
     lab = np.asarray(lab, dtype=np.float32)
     foreground = np.asarray(foreground, dtype=bool)
@@ -262,36 +292,35 @@ def build_adaptive_ramps(
         raise ValueError("maximum_chroma 必须大于 0")
 
     family_count = len(hue_directions_ab)
-    ramps_bgr = np.empty((family_count, steps, 3), dtype=np.float32)
-    ramp_l = np.empty((family_count, steps), dtype=np.float32)
-
     if family_count == 0:
-        return ramps_bgr, ramp_l
+        return (
+            np.zeros((0, steps, 3), dtype=np.float32),
+            np.zeros((0, steps), dtype=np.float32),
+        )
 
     foreground_lab = lab[foreground]
     foreground_labels = family_labels[foreground]
 
     if len(foreground_lab) == 0:
         return (
-            np.empty((family_count, steps, 3), dtype=np.float32),
-            np.empty((family_count, steps), dtype=np.float32),
+            np.zeros((family_count, steps, 3), dtype=np.float32),
+            np.zeros((family_count, steps), dtype=np.float32),
         )
 
-    all_lightness = foreground_lab[:, 0]
     all_chroma = np.linalg.norm(foreground_lab[:, 1:3], axis=1)
 
-    global_center_l = float(np.median(all_lightness))
     global_chroma = float(np.quantile(all_chroma, chroma_quantile))
     global_chroma = min(global_chroma, maximum_chroma)
 
-    positions = np.linspace(-1.0, 1.0, steps, dtype=np.float32)
-
     # 中间档保持原色度，两端平滑衰减到 endpoint_chroma_scale。
+    # ponytail: 偶数 steps 时没有恰好为 1.0 的中间档，只有奇数 steps 才精确。
+    positions = np.linspace(-1.0, 1.0, steps, dtype=np.float32)
     chroma_scale = (1.0 - (1.0 - endpoint_chroma_scale) * np.abs(positions)).astype(
         np.float32
     )
 
     ramp_labs = np.empty((family_count, steps, 3), dtype=np.float32)
+    ramp_l = np.empty((family_count, steps), dtype=np.float32)
 
     for family_index in range(family_count):
         family_mask = foreground_labels == family_index
@@ -318,22 +347,23 @@ def build_adaptive_ramps(
         levels = np.linspace(low, high, steps, dtype=np.float32)
         ramp_l[family_index] = levels
 
-        if len(family_lab) >= minimum_family_pixels:
-            family_chroma = np.linalg.norm(family_lab[:, 1:3], axis=1)
-            base_chroma = float(np.quantile(family_chroma, chroma_quantile))
-        else:
-            base_chroma = global_chroma
-
-        base_chroma = min(base_chroma, maximum_chroma)
-
         direction = hue_directions_ab[family_index]
         direction_norm = float(np.linalg.norm(direction))
 
         if direction_norm <= 1e-6:
-            direction = np.zeros(2, dtype=np.float32)
+            # 中性族：无色度，纯明度阶梯。
             base_chroma = 0.0
+            direction = np.zeros(2, dtype=np.float32)
         else:
             direction = direction / direction_norm
+
+            if len(family_lab) >= minimum_family_pixels:
+                family_chroma = np.linalg.norm(family_lab[:, 1:3], axis=1)
+                base_chroma = float(np.quantile(family_chroma, chroma_quantile))
+            else:
+                base_chroma = global_chroma
+
+            base_chroma = min(base_chroma, maximum_chroma)
 
         ramp_chroma = base_chroma * chroma_scale
 
@@ -346,7 +376,7 @@ def build_adaptive_ramps(
         dtype=np.float32,
     )
     flat_bgr = cv2.cvtColor(flat_lab, cv2.COLOR_LAB2BGR)
-    ramps_bgr[:] = np.clip(flat_bgr.reshape(family_count, steps, 3), 0.0, 1.0) * 255.0
+    ramps_bgr = np.clip(flat_bgr.reshape(family_count, steps, 3), 0.0, 1.0) * 255.0
 
     return ramps_bgr.astype(np.float32), ramp_l
 
@@ -357,69 +387,100 @@ def assign_lightness_tiers(
     ramp_l: np.ndarray,
     foreground: np.ndarray,
 ) -> np.ndarray:
-    """把每个前景像素的实际明度就近量化到其色相族阶梯的某一档（tier）。"""
-    tiers = np.zeros(l_channel.shape, dtype=np.int16)
+    """把每个前景像素的明度就近量化到其色相族阶梯的某一档（tier）。
+
+    返回的 tiers：前景为 ``0 .. steps-1``，背景为 ``-1``。
+    """
+    tiers = np.full(l_channel.shape, -1, dtype=np.int16)
     for group in range(len(ramp_l)):
         mask = foreground & (family_labels == group)
         if not mask.any():
             continue
         values = l_channel[mask, None]
         tiers[mask] = np.argmin(np.abs(values - ramp_l[group][None, :]), axis=1)
-    tiers[~foreground] = 0
     return tiers
 
 
 def perceive(
     bgra: np.ndarray,
-    denoise_d,
-    denoise_sigma,
-    mean_shift_sp,
-    mean_shift_sr,
-    requested_groups,
-    chroma_floor,
-    merge_angle_degrees,
-    minimum_lightness,
-    minimum_fit_pixels,
-    maximum_fit_pixels,
-    random_seed,
-    ramp_steps,
-    ramp_minimum_span,
-    ramp_low_quantile,
-    ramp_high_quantile,
-    ramp_minimum_family_pixels,
-    ramp_chroma_quantile,
-    ramp_endpoint_chroma_scale,
-    ramp_maximum_chroma,
-    canny_low,
-    canny_high,
+    denoise_d: int,
+    denoise_sigma: float,
+    mean_shift_sp: float,
+    mean_shift_sr: float,
+    requested_groups: int,
+    chroma_floor: float,
+    merge_angle_degrees: float,
+    minimum_lightness: float,
+    minimum_fit_pixels: int,
+    maximum_fit_pixels: int,
+    random_seed: int,
+    ramp_steps: int,
+    ramp_minimum_span: float,
+    ramp_low_quantile: float,
+    ramp_high_quantile: float,
+    ramp_minimum_family_pixels: int,
+    ramp_chroma_quantile: float,
+    ramp_endpoint_chroma_scale: float,
+    ramp_maximum_chroma: float,
+    canny_low: int,
+    canny_high: int,
+    alpha_threshold: int,
 ):
-    has_alpha = bgra.ndim == 3 and bgra.shape[-1] == 4
-    bgr = bgra[..., :3].copy() if has_alpha else bgra.copy()
-    source_alpha = bgra[..., 3] if has_alpha else None
+    """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
 
-    if source_alpha is not None:
-        foreground = source_alpha > 0
+    所有参数由 Hydra 配置显式传入。
+    """
+    # ── 输入校验 ──
+    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
+        raise ValueError(
+            f"bgra 必须为 (H, W, 3) 或 (H, W, 4)，实际 shape={bgra.shape}"
+        )
+    if bgra.size == 0:
+        raise ValueError("输入图像为空")
+    if bgra.dtype != np.uint8:
+        raise TypeError(f"bgra 必须为 uint8，实际为 {bgra.dtype}")
+
+    # ── alpha / 前景 ──
+    if bgra.shape[2] == 4:
+        source_alpha = bgra[..., 3]
+        foreground = source_alpha >= alpha_threshold
         alpha_source = source_alpha.copy()
+        bgr = bgra[..., :3].copy()
+        # 填充透明区域，防止其中残留的 RGB 在滤波时污染前景边缘。
+        # ponytail: cv2.inpaint 对大面积透明效果有限，严重时改用 alpha 加权统计。
+        transparent = ~foreground
+        if transparent.any() and foreground.any():
+            bgr = cv2.inpaint(
+                bgr, transparent.astype(np.uint8), 3, cv2.INPAINT_TELEA
+            )
     else:
+        bgr = bgra.copy()
         foreground = np.ones(bgr.shape[:2], dtype=bool)
         alpha_source = np.full(bgr.shape[:2], 255, dtype=np.uint8)
 
+    # ── 去噪 + 色块化 ──
     denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)
     blocks = cv2.pyrMeanShiftFiltering(denoised, mean_shift_sp, mean_shift_sr)
 
-    side_len = max(bgr.shape[0], bgr.shape[1])
+    # ── 补正方形（记录偏移和原始尺寸） ──
+    h, w = bgr.shape[:2]
+    side_len = max(h, w)
+    top = (side_len - h) // 2
+    left = (side_len - w) // 2
+
     bgr = _pad_to_square(bgr, side_len)
     denoised = _pad_to_square(denoised, side_len)
     blocks = _pad_to_square(blocks, side_len)
-
     foreground = _pad_to_square(foreground.astype(np.uint8), side_len).astype(bool)
     alpha_full = _pad_to_square(alpha_source, side_len)
 
-    blocks_lab = cv2.cvtColor(blocks, cv2.COLOR_BGR2LAB).astype(np.float32)
+    # ── uint8 BGR → float32 CIE Lab ──
+    blocks_lab = _bgr_u8_to_lab_f32(blocks)
 
     l_smooth = blocks_lab[..., 0]
-    # 在色块化的 Lab 图像上聚类色相族、建明度阶梯、分配明度层级
-    family_labels, centers_ab = cluster_hue_families(
+
+    # ── 色相族聚类 ──
+    family_labels, hue_directions_ab = cluster_hue_families(
         blocks_lab,
         foreground,
         requested_groups=requested_groups,
@@ -431,11 +492,12 @@ def perceive(
         random_seed=random_seed,
     )
 
+    # ── 明度阶梯色板 ──
     ramps_bgr, ramp_l = build_adaptive_ramps(
         lab=blocks_lab,
         foreground=foreground,
         family_labels=family_labels,
-        hue_directions_ab=centers_ab,
+        hue_directions_ab=hue_directions_ab,
         steps=ramp_steps,
         minimum_span=ramp_minimum_span,
         low_quantile=ramp_low_quantile,
@@ -446,12 +508,15 @@ def perceive(
         maximum_chroma=ramp_maximum_chroma,
     )
 
+    # ── 明度分档 ──
     tier = assign_lightness_tiers(l_smooth, family_labels, ramp_l, foreground)
 
-    # 对去噪后的灰度图提取 Canny 边缘，作为内部细节线的候选来源
+    # ── Canny 细节线（排除 alpha 轮廓边界带） ──
     gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
     canny = cv2.Canny(gray, canny_low, canny_high)
-    canny[~foreground] = 0
+    kernel = np.ones((3, 3), np.uint8)
+    eroded = cv2.erode(foreground.astype(np.uint8), kernel).astype(bool)
+    canny[~eroded] = 0
 
     return {
         "original": bgr,
@@ -461,10 +526,12 @@ def perceive(
         "L": l_smooth,
         "tier": tier,
         "family_labels": family_labels,
-        "family_centers_ab": centers_ab,
+        "hue_directions_ab": hue_directions_ab,
         "ramps_bgr": ramps_bgr,
         "ramp_l": ramp_l,
         "foreground": foreground,
         "alpha_full": alpha_full,
         "canny": canny,
+        "original_shape": (h, w),
+        "pad_offset": (top, left),
     }

@@ -34,6 +34,7 @@ class PerceiveConfig:
     ramp_maximum_chroma: float
     canny_low: int
     canny_high: int
+    alpha_threshold: int
 
 
 @dataclass
@@ -71,6 +72,7 @@ def validate_settings(cfg: DictConfig) -> None:
         "ramp_maximum_chroma",
         "canny_low",
         "canny_high",
+        "alpha_threshold",
     ):
         if OmegaConf.is_missing(p, field):
             errors.append(
@@ -151,6 +153,11 @@ def validate_settings(cfg: DictConfig) -> None:
     if p.canny_low > p.canny_high:
         errors.append(
             f"perceive.canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}"
+        )
+
+    if not 0 <= p.alpha_threshold <= 255:
+        errors.append(
+            f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]"
         )
 
     if errors:
