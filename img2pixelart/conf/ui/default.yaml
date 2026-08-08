@@ -1,0 +1,8 @@
+title: 图片转像素画
+window_width: 1200
+window_height: 720
+preview_size: 480
+render_delay_ms: 300
+size_step: 8
+decimal_step: 0.01
+controls_width: 360

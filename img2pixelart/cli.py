@@ -15,7 +15,7 @@ from .render import render
 from .structure import structure
 
 
-def _run_pipeline(
+def run_pipeline(
     bgra: np.ndarray, cfg: DictConfig, debug_dir: Path
 ) -> tuple[np.ndarray, np.ndarray]:
     """perceive → structure → render，返回 (final_bgr, alpha_down)。"""
@@ -145,7 +145,7 @@ def _hydra_main(cfg: DictConfig) -> None:
         raise ValueError(f"image must be BGR or BGRA, got shape {bgra.shape}")
 
     # Hydra 已 chdir 到输出目录，中间产物和结果直接写当前目录
-    final_bgr, alpha = _run_pipeline(bgra, cfg, Path.cwd())
+    final_bgr, alpha = run_pipeline(bgra, cfg, Path.cwd())
 
     alpha_u8 = alpha.astype(np.uint8) * 255
     final_bgra = np.dstack([final_bgr, alpha_u8])

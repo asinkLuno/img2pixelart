@@ -27,6 +27,7 @@ Repository = "https://github.com/asinkLuno/img2pixelart"
 
 [project.scripts]
 img2pixelart = "img2pixelart.cli:main"
+img2pixelart-ui = "img2pixelart.ui:main"
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
