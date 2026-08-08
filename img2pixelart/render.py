@@ -299,7 +299,9 @@ def render(
     dither_fraction_max: float,
     dither_gradient_min: float,
     silhouette_dark_step: int,
+    silhouette_dark_scale: float,
     internal_outline_dark_steps: int,
+    internal_outline_dark_scale: float,
     steps_per_family: NDArray[np.int32],
     debug_dir: Path,
 ) -> tuple[np.ndarray, dict]:
@@ -378,7 +380,7 @@ def render(
         family = families[y, x]
         if family >= 0:
             step = min(silhouette_dark_step, int(steps_per_family[family]) - 1)
-            final_bgr[y, x] = ramps[family, max(step, 0)]
+            final_bgr[y, x] = ramps[family, max(step, 0)] * silhouette_dark_scale
 
     # 内部细节线比所在像素的档位再暗 internal_delta 档
     internal_delta = internal_outline_dark_steps
@@ -386,7 +388,7 @@ def render(
         family = families[y, x]
         if family >= 0:
             step = max(0, int(hard_tiers[y, x]) - internal_delta)
-            final_bgr[y, x] = ramps[family, step]
+            final_bgr[y, x] = ramps[family, step] * internal_outline_dark_scale
 
     final_bgr[~valid] = 0
     final_u8 = np.clip(final_bgr, 0, 255).astype(np.uint8)

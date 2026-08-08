@@ -120,7 +120,9 @@ def _run_pipeline(
         dither_fraction_max=r.dither_fraction_max,
         dither_gradient_min=r.dither_gradient_min,
         silhouette_dark_step=r.silhouette_dark_step,
+        silhouette_dark_scale=r.silhouette_dark_scale,
         internal_outline_dark_steps=r.internal_outline_dark_steps,
+        internal_outline_dark_scale=r.internal_outline_dark_scale,
         steps_per_family=steps_per_family,
         debug_dir=debug_dir,
     )

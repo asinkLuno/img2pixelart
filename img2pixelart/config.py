@@ -58,7 +58,9 @@ class RenderConfig:
     dither_fraction_max: float
     dither_gradient_min: float
     silhouette_dark_step: int
+    silhouette_dark_scale: float
     internal_outline_dark_steps: int
+    internal_outline_dark_scale: float
 
 
 @dataclass
@@ -155,7 +157,9 @@ def validate_settings(cfg: DictConfig) -> None:
             "dither_fraction_max",
             "dither_gradient_min",
             "silhouette_dark_step",
+            "silhouette_dark_scale",
             "internal_outline_dark_steps",
+            "internal_outline_dark_scale",
         ],
     )
 
@@ -259,9 +263,17 @@ def validate_settings(cfg: DictConfig) -> None:
         errors.append(f"render.dither_gradient_min={r.dither_gradient_min} 必须 >= 0")
     if r.silhouette_dark_step < 0:
         errors.append(f"render.silhouette_dark_step={r.silhouette_dark_step} 必须 >= 0")
+    if not 0.0 <= r.silhouette_dark_scale <= 1.0:
+        errors.append(
+            f"render.silhouette_dark_scale={r.silhouette_dark_scale} 必须位于 [0, 1]"
+        )
     if r.internal_outline_dark_steps < 0:
         errors.append(
             f"render.internal_outline_dark_steps={r.internal_outline_dark_steps} 必须 >= 0"
+        )
+    if not 0.0 <= r.internal_outline_dark_scale <= 1.0:
+        errors.append(
+            f"render.internal_outline_dark_scale={r.internal_outline_dark_scale} 必须位于 [0, 1]"
         )
 
     # ── fit 业务规则 ──
