@@ -50,28 +50,24 @@ def _merge_hue_centers(centers: FloatArray, angular_threshold_degrees: float):
     centers = _normalize_vectors(np.asarray(centers, dtype=np.float32))
     cosine_threshold = np.cos(np.deg2rad(angular_threshold_degrees))
     similarities = centers @ centers.T
-    adjacency = similarities >= cosine_threshold
+    groups: list[list[int]] = []
+    for index in range(len(centers)):
+        group = next(
+            (
+                members
+                for members in groups
+                if np.all(similarities[index, members] >= cosine_threshold)
+            ),
+            None,
+        )
+        if group is None:
+            groups.append([index])
+        else:
+            group.append(index)
 
-    visited = np.zeros(len(centers), dtype=bool)
     merged: list[FloatArray] = []
-
-    for start in range(len(centers)):
-        if visited[start]:
-            continue
-
-        stack = [start]
-        visited[start] = True
-        component: list[int] = []
-
-        while stack:
-            current = stack.pop()
-            component.append(current)
-
-            neighbors = np.flatnonzero(adjacency[current] & ~visited)
-            visited[neighbors] = True
-            stack.extend(neighbors.tolist())
-
-        mean_direction = centers[component].mean(axis=0, keepdims=True)
+    for group in groups:
+        mean_direction = centers[group].mean(axis=0, keepdims=True)
         merged.append(_normalize_vectors(mean_direction)[0])
 
     return np.asarray(merged, dtype=np.float32)
@@ -513,10 +509,10 @@ def perceive(
     _save("03_blocks", blocks)
 
     # ── 补正方形（记录偏移和原始尺寸） ──
-    h, w = bgr.shape[:2]
-    side_len = max(h, w)
-    top = (side_len - h) // 2
-    left = (side_len - w) // 2
+    original_h, original_w = bgr.shape[:2]
+    side_len = max(original_h, original_w)
+    top = (side_len - original_h) // 2
+    left = (side_len - original_w) // 2
 
     bgr = _pad_to_square(bgr, side_len)
     denoised = _pad_to_square(denoised, side_len)
@@ -620,6 +616,6 @@ def perceive(
         "foreground": foreground,
         "alpha_full": alpha_full,
         "canny": canny,
-        "original_shape": (h, w),
+        "original_shape": (original_h, original_w),
         "pad_offset": (top, left),
     }

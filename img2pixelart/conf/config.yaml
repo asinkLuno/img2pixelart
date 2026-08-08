@@ -7,7 +7,7 @@ defaults:
   - fit: default
 
 img: ???
-size: 96
+size: 64
 palette: null
 
 hydra:

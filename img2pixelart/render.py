@@ -381,7 +381,7 @@ def render(
             final_bgr[y, x] = ramps[family, max(step, 0)]
 
     # 内部细节线比所在像素的档位再暗 internal_delta 档
-    internal_delta = max(1, internal_outline_dark_steps)
+    internal_delta = internal_outline_dark_steps
     for y, x in np.argwhere(struct["internal_detail"]):
         family = families[y, x]
         if family >= 0:
