@@ -1,10 +1,10 @@
 # structure 阶段（降采样 / 轮廓推导 / 小精灵清理）参数
 # 像素画尺寸由顶层 size 控制（默认 96），命令行传递：img2pixelart ... size=128
 alpha_coverage: 0.16
-edge_coverage: 0.065
+edge_coverage: 0.03
 edge_min_length: 2
-edge_canny_support_radius: 1
-edge_open_before_thin: true
+edge_canny_support_radius: 6
+edge_open_before_thin: false
 small_cleanup_threshold: 64
 small_detail_min_length: 4
 small_cleanup_passes: 2

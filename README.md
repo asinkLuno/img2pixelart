@@ -88,8 +88,8 @@ img2pixelart -m \
 | `render.pattern_style` | 抖动风格：`ordered` / `diagonal` / `clustered` | ordered |
 | `render.silhouette_dark_step` | 外轮廓暗化级数（0=无） | 0 |
 | `render.silhouette_dark_scale` | 外轮廓亮度缩放（越小越深） | 0.75 |
-| `render.internal_outline_dark_steps` | 内部描边暗化级数（0=无） | 1 |
-| `render.internal_outline_dark_scale` | 内部描边亮度缩放（越小越深） | 0.75 |
+| `render.internal_outline_dark_steps` | 内部描边暗化级数（0=无） | 2 |
+| `render.internal_outline_dark_scale` | 内部描边亮度缩放（越小越深） | 0.6 |
 | `render.dither_fraction_min` | 抖动区域下限 | 0.18 |
 | `render.dither_fraction_max` | 抖动区域上限 | 0.82 |
 

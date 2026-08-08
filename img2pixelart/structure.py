@@ -350,6 +350,7 @@ def _simplify_small_sprite(
     family_down: LabelArray,
     tier_down: LabelArray,
     canny_down: BoolArray,
+    internal_detail: BoolArray,
     size: int,
     small_cleanup_threshold: int,
     small_hole_close: bool,
@@ -375,8 +376,8 @@ def _simplify_small_sprite(
             "family_boundary": label_boundary(family_down, alpha_down),
             "shade_boundary": label_boundary(tier_down, alpha_down),
             "canny_down": canny_down,
-            "internal_detail": np.zeros_like(alpha_down, dtype=bool),
-            "outline": alpha_inner_boundary(alpha_down),
+            "internal_detail": internal_detail,
+            "outline": alpha_inner_boundary(alpha_down) | internal_detail,
             "small_cleanup_applied": False,
         }
 
@@ -526,6 +527,7 @@ def structure(
         family_down=family_down,
         tier_down=tier_down,
         canny_down=canny_down,
+        internal_detail=internal_detail,
         size=size,
         small_cleanup_threshold=small_cleanup_threshold,
         small_hole_close=small_hole_close,
