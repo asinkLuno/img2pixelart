@@ -9,7 +9,7 @@ from loguru import logger
 from omegaconf import DictConfig
 
 from .config import validate_settings
-from .fit import load_palette, palette_auto_config, structure_palette_ramps
+from .fit import load_palette, quantize_to_ramps
 from .perceive import perceive
 from .render import render
 from .structure import structure
@@ -22,30 +22,11 @@ def _run_pipeline(
     debug_dir.mkdir(parents=True, exist_ok=True)
 
     p = cfg.perceive
-    resolved_groups = p.requested_groups
-    resolved_steps = p.ramp_steps
+    palette_bgr = None
 
     if cfg.palette:
         palette_bgr = load_palette(hydra.utils.to_absolute_path(cfg.palette))
-        f = cfg.fit
-        palette_ramps = structure_palette_ramps(
-            palette_bgr,
-            chroma_floor=f.chroma_floor,
-            hue_gap_degrees=f.hue_gap_degrees,
-        )
-        logger.info(
-            "palette: {} ramps from {} colors",
-            len(palette_ramps),
-            len(palette_bgr),
-        )
-        resolved_groups, resolved_steps = palette_auto_config(
-            palette_ramps, auto_chroma_floor=f.auto_chroma_floor
-        )
-        logger.info(
-            "palette: auto-config requested_groups={} ramp_steps={}",
-            resolved_groups,
-            resolved_steps,
-        )
+        logger.info("palette: {} colors", len(palette_bgr))
 
     perceived = perceive(
         bgra,
@@ -53,7 +34,7 @@ def _run_pipeline(
         denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
-        requested_groups=resolved_groups,
+        requested_groups=p.requested_groups,
         chroma_floor=p.chroma_floor,
         merge_angle_degrees=p.merge_angle_degrees,
         minimum_lightness=p.minimum_lightness,
@@ -61,7 +42,7 @@ def _run_pipeline(
         maximum_fit_pixels=p.maximum_fit_pixels,
         random_seed=p.random_seed,
         spherical_kmeans_iterations=p.spherical_kmeans_iterations,
-        ramp_steps=resolved_steps,
+        ramp_steps=p.ramp_steps,
         ramp_minimum_span=p.ramp_minimum_span,
         ramp_low_quantile=p.ramp_low_quantile,
         ramp_high_quantile=p.ramp_high_quantile,
@@ -72,10 +53,11 @@ def _run_pipeline(
         canny_low=p.canny_low,
         canny_high=p.canny_high,
         alpha_threshold=p.alpha_threshold,
+        palette_bgr=palette_bgr,
         debug_dir=debug_dir,
     )
     F_src = len(perceived["hue_directions_ab"])
-    logger.info("perceive: {} families × {} steps", F_src, resolved_steps)
+    logger.info("perceive: {} families", F_src)
 
     # 无有效色相族 → 直接返回透明图
     if F_src == 0:
@@ -108,7 +90,7 @@ def _run_pipeline(
         struct["small_cleanup_applied"],
     )
 
-    steps_per_family = np.full(F_src, resolved_steps, dtype=np.int32)
+    steps_per_family = perceived["steps_per_family"]
 
     r = cfg.render
     final_bgr, _meta = render(
@@ -126,6 +108,13 @@ def _run_pipeline(
         steps_per_family=steps_per_family,
         debug_dir=debug_dir,
     )
+    if palette_bgr is not None:
+        final_bgr = quantize_to_ramps(
+            final_bgr,
+            struct["family_down"],
+            perceived["ramps_bgr"],
+            steps_per_family,
+        )
 
     return final_bgr, struct["alpha_down"]
 

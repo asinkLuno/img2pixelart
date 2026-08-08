@@ -9,6 +9,8 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
+from .fit import fit_ramps_to_palette
+
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
@@ -463,6 +465,7 @@ def perceive(
     canny_low: int,
     canny_high: int,
     alpha_threshold: int,
+    palette_bgr: NDArray[np.uint8] | None,
     debug_dir: Path,
 ):
     """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
@@ -525,7 +528,6 @@ def perceive(
 
     l_smooth = blocks_lab[..., 0]
 
-    # ── 色相族聚类 ──
     family_labels, hue_directions_ab = cluster_hue_families(
         blocks_lab,
         foreground,
@@ -538,6 +540,24 @@ def perceive(
         random_seed=random_seed,
         spherical_kmeans_iterations=spherical_kmeans_iterations,
     )
+    ramps_bgr, ramp_l = build_adaptive_ramps(
+        lab=blocks_lab,
+        foreground=foreground,
+        family_labels=family_labels,
+        hue_directions_ab=hue_directions_ab,
+        steps=ramp_steps,
+        minimum_span=ramp_minimum_span,
+        low_quantile=ramp_low_quantile,
+        high_quantile=ramp_high_quantile,
+        minimum_family_pixels=ramp_minimum_family_pixels,
+        chroma_quantile=ramp_chroma_quantile,
+        endpoint_chroma_scale=ramp_endpoint_chroma_scale,
+        maximum_chroma=ramp_maximum_chroma,
+    )
+    if palette_bgr is not None:
+        ramps_bgr = fit_ramps_to_palette(ramps_bgr, palette_bgr)
+    tier = assign_lightness_tiers(l_smooth, family_labels, ramp_l, foreground)
+    steps_per_family = np.full(len(hue_directions_ab), ramp_steps, dtype=np.int32)
 
     # families 可视化
     fam_viz = np.zeros((*family_labels.shape, 3), dtype=np.uint8)
@@ -553,34 +573,15 @@ def perceive(
         fam_viz[family_labels == fi] = fam_colors[fi % len(fam_colors)]
     _save("04_families", fam_viz)
 
-    # ── 明度阶梯色板 ──
-    ramps_bgr, ramp_l = build_adaptive_ramps(
-        lab=blocks_lab,
-        foreground=foreground,
-        family_labels=family_labels,
-        hue_directions_ab=hue_directions_ab,
-        steps=ramp_steps,
-        minimum_span=ramp_minimum_span,
-        low_quantile=ramp_low_quantile,
-        high_quantile=ramp_high_quantile,
-        minimum_family_pixels=ramp_minimum_family_pixels,
-        chroma_quantile=ramp_chroma_quantile,
-        endpoint_chroma_scale=ramp_endpoint_chroma_scale,
-        maximum_chroma=ramp_maximum_chroma,
-    )
-
     # palette
     ramps_u8 = ramps_bgr.astype(np.uint8)
-    N, steps = ramps_u8.shape[:2]
+    family_count, max_steps = ramps_u8.shape[:2]
     bh, bw = 24, 48
-    pal = np.zeros((N * bh, steps * bw, 3), dtype=np.uint8)
-    for fi in range(N):
+    pal = np.zeros((family_count * bh, max_steps * bw, 3), dtype=np.uint8)
+    for fi, steps in enumerate(steps_per_family):
         for si in range(steps):
             pal[fi * bh : (fi + 1) * bh, si * bw : (si + 1) * bw] = ramps_u8[fi, si]
     _save("05_palette", pal)
-
-    # ── 明度分档 ──
-    tier = assign_lightness_tiers(l_smooth, family_labels, ramp_l, foreground)
 
     # ── Canny 细节线（排除 alpha 轮廓边界带） ──
     gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
@@ -593,7 +594,7 @@ def perceive(
     # reconstructed
     h, w = tier.shape
     recon = np.zeros((h, w, 3), dtype=np.uint8)
-    for fi in range(N):
+    for fi, steps in enumerate(steps_per_family):
         mask = (family_labels == fi) & (tier >= 0)
         if not mask.any():
             continue
@@ -613,6 +614,7 @@ def perceive(
         "hue_directions_ab": hue_directions_ab,
         "ramps_bgr": ramps_bgr,
         "ramp_l": ramp_l,
+        "steps_per_family": steps_per_family,
         "foreground": foreground,
         "alpha_full": alpha_full,
         "canny": canny,

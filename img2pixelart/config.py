@@ -64,18 +64,10 @@ class RenderConfig:
 
 
 @dataclass
-class FitConfig:
-    chroma_floor: float
-    hue_gap_degrees: float
-    auto_chroma_floor: float
-
-
-@dataclass
 class Settings:
     perceive: PerceiveConfig
     structure: StructureConfig
     render: RenderConfig
-    fit: FitConfig
 
 
 def _collect_missing(cfg: DictConfig, prefix: str, fields: list[str]) -> list[str]:
@@ -92,7 +84,6 @@ def validate_settings(cfg: DictConfig) -> None:
     p = cfg.perceive
     s = cfg.structure
     r = cfg.render
-    f = cfg.fit
 
     errors: list[str] = []
 
@@ -161,13 +152,6 @@ def validate_settings(cfg: DictConfig) -> None:
             "internal_outline_dark_steps",
             "internal_outline_dark_scale",
         ],
-    )
-
-    # ── fit 缺失字段 ──
-    errors += _collect_missing(
-        f,
-        "fit",
-        ["chroma_floor", "hue_gap_degrees", "auto_chroma_floor"],
     )
 
     if errors:
@@ -275,14 +259,6 @@ def validate_settings(cfg: DictConfig) -> None:
         errors.append(
             f"render.internal_outline_dark_scale={r.internal_outline_dark_scale} 必须位于 [0, 1]"
         )
-
-    # ── fit 业务规则 ──
-    if f.chroma_floor < 0:
-        errors.append(f"fit.chroma_floor={f.chroma_floor} 必须 >= 0")
-    if not 0 <= f.hue_gap_degrees <= 180:
-        errors.append(f"fit.hue_gap_degrees={f.hue_gap_degrees} 必须位于 [0, 180]")
-    if f.auto_chroma_floor < 0:
-        errors.append(f"fit.auto_chroma_floor={f.auto_chroma_floor} 必须 >= 0")
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))

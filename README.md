@@ -31,6 +31,13 @@ img2pixelart img=docs/assets/banana_orig.png size=96
 
 输出在当前目录的 `result.png`。
 
+指定调色板后，各色相族的明度 ramp 会先匹配到调色板最近色；抖动、阴影和轮廓
+都沿匹配后的 ramp 渲染，因此所有非透明像素都来自调色板：
+
+```bash
+img2pixelart img=docs/assets/banana_orig.png palette=palette/resurrect-64.txt size=96
+```
+
 ### 裁边
 
 去掉图片四周空白区域：

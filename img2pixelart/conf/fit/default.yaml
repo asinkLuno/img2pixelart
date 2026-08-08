@@ -1,5 +1,0 @@
-# fit 阶段（调色盘结构化 / 匹配 / 重映射）参数
-# 可用命令行覆盖，如 palette.fit.chroma_floor=3.0
-chroma_floor: 5.0
-hue_gap_degrees: 25.0
-auto_chroma_floor: 3.0
