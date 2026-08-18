@@ -49,6 +49,7 @@ def _perceive(tmp_path) -> tuple[dict, DictConfig]:
         ramp_minimum_span=p.ramp_minimum_span,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=None,
+        debug=True,
         debug_dir=tmp_path,
     )
     return result, cfg

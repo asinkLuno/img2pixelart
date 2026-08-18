@@ -63,6 +63,9 @@ def validate_ascii(cfg: DictConfig) -> None:
     if not 0 <= cfg.alpha_threshold <= 255:
         errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
 
+    if not isinstance(cfg.debug, bool):
+        errors.append(f"debug={cfg.debug!r} 必须是布尔值")
+
     errors += _collect_missing(
         a,
         "ascii",
@@ -174,6 +177,9 @@ def validate_settings(cfg: DictConfig) -> None:
         )
     if not 0 <= cfg.alpha_threshold <= 255:
         errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
+
+    if not isinstance(cfg.debug, bool):
+        errors.append(f"debug={cfg.debug!r} 必须是布尔值")
 
     # ── structure 业务规则 ──
     if not 0.0 < s.alpha_coverage <= 1.0:

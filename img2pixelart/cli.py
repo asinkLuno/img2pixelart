@@ -20,7 +20,9 @@ def run_pipeline(
     bgra: np.ndarray, cfg: DictConfig, debug_dir: Path
 ) -> tuple[np.ndarray, np.ndarray]:
     """perceive → structure → render，返回 (final_bgr, alpha_down)。"""
-    debug_dir.mkdir(parents=True, exist_ok=True)
+    debug = bool(cfg.debug)
+    if debug:
+        debug_dir.mkdir(parents=True, exist_ok=True)
 
     p = cfg.perceive
     palette_bgr = None
@@ -41,6 +43,7 @@ def run_pipeline(
         ramp_minimum_span=p.ramp_minimum_span,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=palette_bgr,
+        debug=debug,
         debug_dir=debug_dir,
     )
     F_src = len(perceived["hue_directions_ab"])
@@ -65,6 +68,7 @@ def run_pipeline(
         small_cleanup_passes=s.small_cleanup_passes,
         small_tier_smooth_majority=s.small_tier_smooth_majority,
         small_skip_canny_under=s.small_skip_canny_under,
+        debug=debug,
         debug_dir=debug_dir,
     )
     logger.info(
@@ -78,13 +82,14 @@ def run_pipeline(
     steps_per_family = perceived["steps_per_family"]
 
     r = cfg.render
-    final_bgr, _meta = render(
+    final_bgr = render(
         perceived,
         struct,
         dither_style=r.dither_style,
         silhouette_darkness=r.silhouette_darkness,
         internal_darkness=r.internal_darkness,
         steps_per_family=steps_per_family,
+        debug=debug,
         debug_dir=debug_dir,
     )
     if palette_bgr is not None:
@@ -159,6 +164,7 @@ def _ascii_main(cfg: DictConfig) -> None:
         denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
+        debug=bool(cfg.debug),
         debug_dir=Path.cwd(),
     )
 

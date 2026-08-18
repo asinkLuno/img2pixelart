@@ -464,15 +464,18 @@ def structure(
     small_cleanup_passes: int,
     small_tier_smooth_majority: int,
     small_skip_canny_under: int,
+    debug: bool,
     debug_dir: Path,
 ) -> dict:
     """阶段 B：把全分辨率信息降采样到 width x height 网格，推导轮廓与内部细节。
 
     perceived 为 :func:`perceive` 的输出字典。
-    debug_dir 非空时，每步结果即时保存为 PNG。
+    debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
     """
 
     def _save(name: str, img: np.ndarray) -> None:
+        if not debug:
+            return
         if img.dtype == bool:
             img = img.astype(np.uint8) * 255
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)

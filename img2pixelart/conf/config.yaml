@@ -12,6 +12,8 @@ width: 64
 height: 64
 alpha_threshold: 128
 palette: null
+# 调试输出开关：false（默认）只写 result.png；true 时各阶段中间 PNG 写入输出目录
+debug: false
 
 hydra:
   job:

@@ -405,15 +405,18 @@ def perceive(
     ramp_minimum_span: float,
     alpha_threshold: int,
     palette_bgr: NDArray[np.uint8] | None,
+    debug: bool,
     debug_dir: Path,
 ):
     """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
 
     用户可调参数由 Hydra 配置显式传入。
-    debug_dir 非空时，每步结果即时保存为 PNG。
+    debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
     """
 
     def _save(name: str, img: np.ndarray) -> None:
+        if not debug:
+            return
         if img.dtype == bool:
             img = img.astype(np.uint8) * 255
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)

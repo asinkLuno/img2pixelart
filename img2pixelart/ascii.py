@@ -294,6 +294,7 @@ def generate_ascii_art(
     denoise_strength: float,
     canny_low_ratio: float,
     merge_max_gap: int,
+    debug: bool,
     debug_dir: Path,
 ) -> list[str]:
     """把图片转换为 ASCII 字符画，返回每行字符串的列表。
@@ -302,6 +303,8 @@ def generate_ascii_art(
     带 alpha 通道的源图用 alpha 做主体遮罩（透明区域合成到白底参与边缘检测，
     主体外的字符格置空）；不带 alpha 的照片全图处理。
 
+    debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
+
     流程：
     1. 等比缩放到 rows * CELL_H 高
     2. 边缘提取：线条画走 Otsu 二值化 + 细化，照片合并亮度 Canny 与 Lab 色彩梯度后细化
@@ -309,9 +312,12 @@ def generate_ascii_art(
     4. 合并线段：填补小空隙、删除孤立噪点
     5. 主体遮罩外的字符格置空
     """
-    debug_dir.mkdir(parents=True, exist_ok=True)
+    if debug:
+        debug_dir.mkdir(parents=True, exist_ok=True)
 
     def _save(name: str, img: np.ndarray) -> None:
+        if not debug:
+            return
         if img.dtype == bool:
             img = img.astype(np.uint8) * 255
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)
