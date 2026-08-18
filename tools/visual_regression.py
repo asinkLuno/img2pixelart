@@ -76,24 +76,26 @@ def _replace_once(path: Path, old: str, new: str) -> None:
 
 
 def _apply_patch(package_dir: Path, patch: str) -> None:
-    perceive = package_dir / "perceive.py"
     if patch == "skip-bilateral":
         _replace_once(
-            perceive,
+            package_dir / "perceive.py",
             """    denoised = cv2.bilateralFilter(
         bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA
     )""",
             "    denoised = bgr.copy()  # AB-2 temporary candidate: skip bilateral filtering",
         )
     elif patch == "fixed-canny":
+        # Otsu-Canny 已抽取到 image.py（perceive 与 ascii 共用）；
+        # AB 实验只跑像素画流水线，补丁仅改这一处实现。
         _replace_once(
-            perceive,
-            """    canny = cv2.Canny(
+            package_dir / "image.py",
+            """    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return cv2.Canny(
         gray,
-        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
+        max(float(otsu) * CANNY_LOW_RATIO, CANNY_LOW_FLOOR),
         float(otsu),
     )""",
-            "    canny = cv2.Canny(gray, 40, 120)  # AB-3 temporary candidate: fixed thresholds",
+            "    return cv2.Canny(gray, 40, 120)  # AB-3 temporary candidate: fixed thresholds",
         )
     else:
         raise ValueError(f"unknown experimental patch: {patch}")

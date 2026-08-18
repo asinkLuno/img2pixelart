@@ -7,6 +7,9 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
+from .binary_image import down_mask, thin  # 兼容历史导入；实现位于 binary_image
+from .debug import DebugImageWriter
+
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
@@ -91,16 +94,6 @@ def down_area(image: np.ndarray, width: int, height: int) -> FloatArray:
     return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA).astype(
         np.float32
     )
-
-
-def down_mask(mask: np.ndarray, width: int, height: int, threshold: float) -> BoolArray:
-    """掩码降采样：目标网格内原掩码的覆盖率 >= threshold 才置 1。"""
-    average = cv2.resize(
-        mask.astype(np.float32), (width, height), interpolation=cv2.INTER_AREA
-    )
-    if mask.max(initial=0) > 1:
-        average = average / 255.0
-    return average >= threshold
 
 
 def down_labels_majority(
@@ -215,66 +208,6 @@ def remove_short_components(mask: BoolArray, min_length: int) -> BoolArray:
         if stats[label, cv2.CC_STAT_AREA] >= min_length:
             out |= labels == label
     return out
-
-
-def _zhang_suen_thinning(mask: BoolArray) -> BoolArray:
-    """Zhang-Suen 细化的纯 NumPy 实现（cv2 缺少 ximgproc 时的后备方案）。"""
-    image = mask.astype(np.uint8).copy()
-    changed = True
-    while changed:
-        changed = False
-        for phase in (0, 1):
-            padded = np.pad(image, 1)
-            p2 = padded[:-2, 1:-1]
-            p3 = padded[:-2, 2:]
-            p4 = padded[1:-1, 2:]
-            p5 = padded[2:, 2:]
-            p6 = padded[2:, 1:-1]
-            p7 = padded[2:, :-2]
-            p8 = padded[1:-1, :-2]
-            p9 = padded[:-2, :-2]
-            neighbors = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
-            transitions = (
-                ((p2 == 0) & (p3 == 1)).astype(np.uint8)
-                + ((p3 == 0) & (p4 == 1))
-                + ((p4 == 0) & (p5 == 1))
-                + ((p5 == 0) & (p6 == 1))
-                + ((p6 == 0) & (p7 == 1))
-                + ((p7 == 0) & (p8 == 1))
-                + ((p8 == 0) & (p9 == 1))
-                + ((p9 == 0) & (p2 == 1))
-            )
-            if phase == 0:
-                condition3 = (p2 * p4 * p6) == 0
-                condition4 = (p4 * p6 * p8) == 0
-            else:
-                condition3 = (p2 * p4 * p8) == 0
-                condition4 = (p2 * p6 * p8) == 0
-            delete = (
-                (image == 1)
-                & (neighbors >= 2)
-                & (neighbors <= 6)
-                & (transitions == 1)
-                & condition3
-                & condition4
-            )
-            if delete.any():
-                image[delete] = 0
-                changed = True
-    return image.astype(bool)
-
-
-def thin(mask: BoolArray) -> BoolArray:
-    """把掩码细化成 1 像素宽的线：优先用 cv2.ximgproc.thinning，否则用本地实现。"""
-    if not mask.any():
-        return mask
-    ximgproc = getattr(cv2, "ximgproc", None)
-    if ximgproc is not None and hasattr(ximgproc, "thinning"):
-        result = ximgproc.thinning(
-            mask.astype(np.uint8) * 255, thinningType=ximgproc.THINNING_ZHANGSUEN
-        )
-        return result > 0
-    return _zhang_suen_thinning(mask)
 
 
 # ---------------------------------------------------------------------------
@@ -473,12 +406,7 @@ def structure(
     debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
     """
 
-    def _save(name: str, img: np.ndarray) -> None:
-        if not debug:
-            return
-        if img.dtype == bool:
-            img = img.astype(np.uint8) * 255
-        cv2.imwrite(str(debug_dir / f"{name}.png"), img)
+    debug_images = DebugImageWriter(debug, debug_dir)
 
     # ── 降采样 ──
     alpha_down = down_mask(perceived["alpha_full"], width, height, alpha_coverage)
@@ -496,7 +424,7 @@ def structure(
     )
     tier_down = _quantize_tiers(l_down, family_down, alpha_down, perceived["ramp_l"])
 
-    _save("09_alpha_down", alpha_down.astype(np.uint8) * 255)
+    debug_images.save("09_alpha_down", alpha_down)
 
     # ── 轮廓、Canny 细节、色相族边界、色阶边界 ──
     silhouette = alpha_inner_boundary(alpha_down)
@@ -519,12 +447,12 @@ def structure(
     internal_detail = thin(internal_detail)
     outline = silhouette | internal_detail
 
-    _save("12_silhouette", silhouette)
-    _save("13_canny_down", canny_down)
-    _save("14_family_boundary", family_boundary)
-    _save("15_shade_boundary", shade_boundary)
-    _save("16_internal_detail", internal_detail)
-    _save("17_outline", outline)
+    debug_images.save("12_silhouette", silhouette)
+    debug_images.save("13_canny_down", canny_down)
+    debug_images.save("14_family_boundary", family_boundary)
+    debug_images.save("15_shade_boundary", shade_boundary)
+    debug_images.save("16_internal_detail", internal_detail)
+    debug_images.save("17_outline", outline)
 
     # ── 小尺寸精灵清理 ──
     cleaned = _simplify_small_sprite(

@@ -3,9 +3,10 @@
 from pathlib import Path
 from typing import Final
 
-import cv2
 import numpy as np
 from numpy.typing import NDArray
+
+from .debug import DebugImageWriter
 
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
@@ -297,12 +298,7 @@ def render(
     返回 final_bgr（uint8 BGR）。
     """
 
-    def _save(name: str, img: np.ndarray) -> None:
-        if not debug:
-            return
-        if img.dtype == bool:
-            img = img.astype(np.uint8) * 255
-        cv2.imwrite(str(debug_dir / f"{name}.png"), img)
+    debug_images = DebugImageWriter(debug, debug_dir)
 
     ramps = perceived["ramps_bgr"]  # (family_count, max_steps, 3) BGR
     ramp_l = perceived["ramp_l"]
@@ -374,10 +370,10 @@ def render(
     final_u8 = np.clip(final_bgr, 0, 255).astype(np.uint8)
     dithered_u8 = np.clip(dithered_bgr, 0, 255).astype(np.uint8)
 
-    _save("18_hard_ramp", hard_bgr.astype(np.uint8))
-    _save("19_dither_mask", dither_mask)
-    _save("20_dithered", dithered_u8)
-    _save("21_final", final_u8)
-    _save("22_palette_strip", make_palette_strip(ramps, steps_per_family))
+    debug_images.save("18_hard_ramp", hard_bgr.astype(np.uint8))
+    debug_images.save("19_dither_mask", dither_mask)
+    debug_images.save("20_dithered", dithered_u8)
+    debug_images.save("21_final", final_u8)
+    debug_images.save("22_palette_strip", make_palette_strip(ramps, steps_per_family))
 
     return final_u8

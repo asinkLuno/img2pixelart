@@ -29,8 +29,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .cli import run_pipeline
 from .config import validate_settings
+from .image import to_bgra, validate_bgr_or_bgra
+from .pipeline import run_pipeline
 
 Control = QCheckBox | QComboBox | QDoubleSpinBox | QSpinBox
 CHOICES = {
@@ -210,7 +211,11 @@ class MainWindow(QMainWindow):
         if not filename:
             return
         source = cv2.imread(filename, cv2.IMREAD_UNCHANGED)
-        if source is None or source.ndim != 3 or source.shape[2] not in (3, 4):
+        try:
+            if source is None:
+                raise ValueError("cannot read image")
+            validate_bgr_or_bgra(source, name=filename)
+        except (TypeError, ValueError):
             QMessageBox.warning(self, "无法打开", "请选择 RGB 或 RGBA 图片。")
             return
         self.source = source
@@ -248,7 +253,7 @@ class MainWindow(QMainWindow):
         except (ValueError, cv2.error) as error:
             self.status.showMessage(str(error).replace("\n", " "))
             return
-        self.result = np.dstack([final_bgr, alpha.astype(np.uint8) * 255])
+        self.result = to_bgra(final_bgr, alpha)
         self.result_label.setPixmap(self._pixmap(self.result, smooth=False))
         self.save_button.setEnabled(True)
         self.status.showMessage("预览已更新")

@@ -6,14 +6,12 @@
 
 ```bash
 pip install img2pixelart
-pip install hydra-joblib-launcher   # 多线程 multirun 需要
 ```
 
 或从源码安装：
 
 ```bash
 uv sync
-uv pip install hydra-joblib-launcher
 ```
 
 ## 用法

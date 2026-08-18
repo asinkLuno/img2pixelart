@@ -31,25 +31,32 @@ def test_experiments_cover_issue_candidates() -> None:
 
 def test_temporary_candidates_patch_only_copied_package(tmp_path: Path) -> None:
     perceive = tmp_path / "perceive.py"
-    original = (
+    perceive_original = (
         "    denoised = cv2.bilateralFilter(\n"
         "        bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA\n"
         "    )\n"
-        "    canny = cv2.Canny(\n"
+    )
+    perceive.write_text(perceive_original, encoding="utf-8")
+    image = tmp_path / "image.py"
+    image_original = (
+        "    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)\n"
+        "    return cv2.Canny(\n"
         "        gray,\n"
-        "        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),\n"
+        "        max(float(otsu) * CANNY_LOW_RATIO, CANNY_LOW_FLOOR),\n"
         "        float(otsu),\n"
         "    )\n"
     )
-    perceive.write_text(original, encoding="utf-8")
+    image.write_text(image_original, encoding="utf-8")
 
     _apply_patch(tmp_path, "skip-bilateral")
     assert "denoised = bgr.copy()" in perceive.read_text(encoding="utf-8")
 
-    perceive.write_text(original, encoding="utf-8")
+    perceive.write_text(perceive_original, encoding="utf-8")
+    image.write_text(image_original, encoding="utf-8")
     _apply_patch(tmp_path, "fixed-canny")
-    patched = perceive.read_text(encoding="utf-8")
-    assert "canny = cv2.Canny(gray, 40, 120)" in patched
+    patched = image.read_text(encoding="utf-8")
+    assert "return cv2.Canny(gray, 40, 120)" in patched
+    assert "denoised = bgr.copy()" not in perceive.read_text(encoding="utf-8")
 
 
 def test_ab_experiments_run_with_debug_output(tmp_path: Path) -> None:

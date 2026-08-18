@@ -44,6 +44,10 @@ uv build
 | 路径 | 职责 |
 | --- | --- |
 | `img2pixelart/cli.py` | CLI 入口、Hydra 调度、单图 / ASCII / 裁边命令及 multirun 拼图。 |
+| `img2pixelart/pipeline.py` | perceive → structure → render 流水线编排，CLI 与 GUI 共用。 |
+| `img2pixelart/image.py` | 图像格式校验、alpha 合成与统一 Otsu-Canny 边缘策略。 |
+| `img2pixelart/binary_image.py` | 二值原语：掩码降采样与骨架细化，structure / ascii 共用。 |
+| `img2pixelart/debug.py` | 各阶段调试中间 PNG 的条件写入。 |
 | `img2pixelart/perceive.py` | 感知阶段：去噪、色相族、明度 ramp、边缘等源图分析。 |
 | `img2pixelart/structure.py` | 结构阶段：目标网格、前景 alpha、边缘与小尺寸清理。 |
 | `img2pixelart/render.py` | 渲染阶段：抖动、轮廓与最终 BGR 像素画。 |

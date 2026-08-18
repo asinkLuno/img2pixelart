@@ -7,7 +7,9 @@ import cv2
 import numpy as np
 from numpy.typing import NDArray
 
+from .debug import DebugImageWriter
 from .fit import fit_ramps_to_palette
+from .image import otsu_canny, validate_bgr_or_bgra
 
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
@@ -27,8 +29,7 @@ _RAMP_CHROMA_QUANTILE: Final = 0.5
 _RAMP_ENDPOINT_CHROMA_SCALE: Final = 0.78
 _RAMP_MAXIMUM_CHROMA: Final = 80.0
 # Canny 自适应阈值与 ascii 照片边缘策略一致（AB-3 结论，见 issue #1）。
-_CANNY_LOW_RATIO: Final = 0.33
-_CANNY_LOW_FLOOR: Final = 10.0
+# 具体阈值实现位于 image.otsu_canny，确保 ASCII 与像素画共享同一策略。
 # 去噪 / 分块 / 聚类 / 阶梯的内部常量（#7 最终参数面：这些量不再对外暴露）。
 _BILATERAL_D: Final = 5
 _BILATERAL_SIGMA: Final = 35.0
@@ -417,20 +418,10 @@ def perceive(
     debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
     """
 
-    def _save(name: str, img: np.ndarray) -> None:
-        if not debug:
-            return
-        if img.dtype == bool:
-            img = img.astype(np.uint8) * 255
-        cv2.imwrite(str(debug_dir / f"{name}.png"), img)
+    debug_images = DebugImageWriter(debug, debug_dir)
 
     # ── 输入校验 ──
-    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
-        raise ValueError(f"bgra 必须为 (H, W, 3) 或 (H, W, 4)，实际 shape={bgra.shape}")
-    if bgra.size == 0:
-        raise ValueError("输入图像为空")
-    if bgra.dtype != np.uint8:
-        raise TypeError(f"bgra 必须为 uint8，实际为 {bgra.dtype}")
+    validate_bgr_or_bgra(bgra, name="bgra")
 
     # ── alpha / 前景 ──
     if bgra.shape[2] == 4:
@@ -452,11 +443,11 @@ def perceive(
     denoised = cv2.bilateralFilter(
         bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA
     )
-    _save("01_original", bgr)
-    _save("02_denoised", denoised)
+    debug_images.save("01_original", bgr)
+    debug_images.save("02_denoised", denoised)
 
     blocks = cv2.pyrMeanShiftFiltering(denoised, mean_shift_sp, mean_shift_sr)
-    _save("03_blocks", blocks)
+    debug_images.save("03_blocks", blocks)
 
     # ── uint8 BGR → float32 CIE Lab ──
     blocks_lab = _bgr_u8_to_lab_f32(blocks)
@@ -493,7 +484,7 @@ def perceive(
     ]
     for fi in range(len(hue_directions_ab)):
         fam_viz[family_labels == fi] = fam_colors[fi % len(fam_colors)]
-    _save("04_families", fam_viz)
+    debug_images.save("04_families", fam_viz)
 
     # palette
     ramps_u8 = ramps_bgr.astype(np.uint8)
@@ -503,22 +494,17 @@ def perceive(
     for fi, steps in enumerate(steps_per_family):
         for si in range(steps):
             pal[fi * bh : (fi + 1) * bh, si * bw : (si + 1) * bw] = ramps_u8[fi, si]
-    _save("05_palette", pal)
+    debug_images.save("05_palette", pal)
 
     # ── Canny 细节线（排除 alpha 轮廓边界带） ──
     # 阈值采用 Otsu 自适应：low = max(Otsu × ratio, floor)，high = Otsu，
     # 与 ascii 照片边缘策略一致（AB-3 结论）。Canny 输入仍用去噪灰度图。
     gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
-    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    canny = cv2.Canny(
-        gray,
-        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
-        float(otsu),
-    )
+    canny = otsu_canny(gray)
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(foreground.astype(np.uint8), kernel).astype(bool)
     canny[~eroded] = 0
-    _save("06_canny", canny)
+    debug_images.save("06_canny", canny)
 
     # 调试用中间量（original / denoised / blocks / blocks_lab / tier）只在本
     # 函数内部使用即弃，不进返回 dict；structure 阶段基于 L_down 自行重算 tier。
