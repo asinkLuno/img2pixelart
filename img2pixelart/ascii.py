@@ -1,7 +1,7 @@
 """图片转 ASCII 字符画：边缘提取 → 字符格分类 → 线段合并。
 
-移植自 gEInk 的 art/ascii.py，并复用本仓 structure 阶段的算法：
-骨架细化用 :func:`img2pixelart.structure.thin`（替代 skimage 骨架化），
+移植自 gEInk 的 art/ascii.py，并复用二值图像原语：
+骨架细化用 :func:`img2pixelart.binary_image.thin`（替代 skimage 骨架化），
 主体遮罩用源图 alpha 通道降采样（替代 gEInk 的 SAM 分割）。
 """
 
@@ -11,16 +11,16 @@ from typing import Final
 import cv2
 import numpy as np
 
-from .structure import down_mask, thin
+from .binary_image import down_mask, thin
+from .debug import DebugImageWriter
+from .image import otsu_canny, validate_bgr_or_bgra
 
 # 半角等宽字符栅格比例 2:1（终端字符几何常量，非调参项）
 CELL_H = 16
 CELL_W = 8
 
 _LINE_ART_MAX_SATURATION: Final = 30.0
-# Canny 低阈值 = Otsu × 比例（#7 最终参数面：固定为内部常量，与 perceive 一致）。
-_CANNY_LOW_RATIO: Final = 0.33
-_CANNY_LOW_FLOOR: Final = 10.0
+# Canny 阈值由 image.otsu_canny 统一实现，与 perceive 完全一致。
 _COLOR_EDGE_QUANTILE: Final = 0.99
 _EDGE_BLUR_SIGMA: Final = 2.0
 _INTENSITY_BREAKS: Final = (1.0, 12.0, 45.0, 110.0)
@@ -86,12 +86,7 @@ def _photo_edges(
         bgr, 9, 75.0 * denoise_strength, 75.0 * denoise_strength
     )
     gray = cv2.cvtColor(smooth, cv2.COLOR_BGR2GRAY)
-    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    luma_edges = cv2.Canny(
-        gray,
-        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
-        float(otsu),
-    )
+    luma_edges = otsu_canny(gray)
 
     lab = cv2.cvtColor(smooth, cv2.COLOR_BGR2LAB).astype(np.float32)
     grad_x = cv2.Sobel(lab, cv2.CV_32F, 1, 0, ksize=3)
@@ -312,15 +307,9 @@ def generate_ascii_art(
     4. 合并线段：填补小空隙、删除孤立噪点
     5. 主体遮罩外的字符格置空
     """
-    if debug:
-        debug_dir.mkdir(parents=True, exist_ok=True)
+    debug_images = DebugImageWriter(debug, debug_dir)
 
-    def _save(name: str, img: np.ndarray) -> None:
-        if not debug:
-            return
-        if img.dtype == bool:
-            img = img.astype(np.uint8) * 255
-        cv2.imwrite(str(debug_dir / f"{name}.png"), img)
+    validate_bgr_or_bgra(bgra, name="bgra")
 
     # ── 等比缩放 ──
     h, w = bgra.shape[:2]
@@ -344,8 +333,8 @@ def generate_ascii_art(
     grid_h, grid_w = grid_rows * CELL_H, grid_cols * CELL_W
 
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-    _save("ascii_gray", gray)
-    _save("ascii_subject", foreground)
+    debug_images.save("ascii_gray", gray)
+    debug_images.save("ascii_subject", foreground)
 
     if _is_line_art(bgr, line_art_white_ratio, _LINE_ART_MAX_SATURATION):
         edges = _line_art_edges(gray, grid_h, grid_w)
@@ -357,7 +346,7 @@ def generate_ascii_art(
             grid_w,
             denoise_strength,
         )
-    _save("ascii_edges", edges)
+    debug_images.save("ascii_edges", edges)
 
     # 边缘图先高斯模糊再做 Sobel，让梯度方向来自边缘几何而非图像纹理，
     # 避免纹理区域的角度误判
