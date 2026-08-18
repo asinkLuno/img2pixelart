@@ -1,10 +1,5 @@
 # render 阶段（抖动 / 轮廓暗化）参数
-dither_method: pattern
-pattern_style: ordered
-dither_fraction_min: 0.18
-dither_fraction_max: 0.82
-dither_gradient_min: 0.8
-silhouette_dark_step: 0
-silhouette_dark_scale: 0.75
-internal_outline_dark_steps: 2
-internal_outline_dark_scale: 0.6
+dither_style: ordered
+# 0 关闭；默认值 1.0 精确复现原轮廓暗化的档位和缩放。
+silhouette_darkness: 1.0
+internal_darkness: 1.0

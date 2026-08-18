@@ -10,6 +10,7 @@ defaults:
 img: ???
 width: 64
 height: 64
+alpha_threshold: 128
 palette: null
 
 hydra:

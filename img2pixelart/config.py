@@ -20,7 +20,6 @@ class PerceiveConfig:
     ramp_minimum_span: float
     canny_low: int
     canny_high: int
-    alpha_threshold: int
 
 
 @dataclass
@@ -37,15 +36,9 @@ class StructureConfig:
 
 @dataclass
 class RenderConfig:
-    dither_method: str
-    pattern_style: str
-    dither_fraction_min: float
-    dither_fraction_max: float
-    dither_gradient_min: float
-    silhouette_dark_step: int
-    silhouette_dark_scale: float
-    internal_outline_dark_steps: int
-    internal_outline_dark_scale: float
+    dither_style: str
+    silhouette_darkness: float
+    internal_darkness: float
 
 
 @dataclass
@@ -65,20 +58,21 @@ def _collect_missing(cfg: DictConfig, prefix: str, fields: list[str]) -> list[st
 
 
 def validate_ascii(cfg: DictConfig) -> None:
-    """ascii 阶段业务规则校验。"""
+    """ascii 阶段业务规则校验（cfg 为完整配置，含顶层 alpha_threshold）。"""
+    a = cfg.ascii
     errors: list[str] = []
 
+    if not 0 <= cfg.alpha_threshold <= 255:
+        errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
+
     errors += _collect_missing(
-        cfg,
+        a,
         "ascii",
         [
             "rows",
-            "alpha_threshold",
-            "alpha_coverage",
+            "subject_coverage",
             "line_art_white_ratio",
-            "bilateral_d",
-            "bilateral_sigma_color",
-            "bilateral_sigma_space",
+            "denoise_strength",
             "canny_low_ratio",
             "merge_max_gap",
         ],
@@ -87,30 +81,20 @@ def validate_ascii(cfg: DictConfig) -> None:
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
 
-    if cfg.rows < 1:
-        errors.append(f"ascii.rows={cfg.rows} 必须 >= 1")
-    if not 0 <= cfg.alpha_threshold <= 255:
-        errors.append(f"ascii.alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
-    if not 0.0 < cfg.alpha_coverage <= 1.0:
-        errors.append(f"ascii.alpha_coverage={cfg.alpha_coverage} 必须位于 (0, 1]")
-    if not 0.0 <= cfg.line_art_white_ratio <= 1.0:
+    if a.rows < 1:
+        errors.append(f"ascii.rows={a.rows} 必须 >= 1")
+    if not 0.0 < a.subject_coverage <= 1.0:
+        errors.append(f"ascii.subject_coverage={a.subject_coverage} 必须位于 (0, 1]")
+    if not 0.0 <= a.line_art_white_ratio <= 1.0:
         errors.append(
-            f"ascii.line_art_white_ratio={cfg.line_art_white_ratio} 必须位于 [0, 1]"
+            f"ascii.line_art_white_ratio={a.line_art_white_ratio} 必须位于 [0, 1]"
         )
-    if cfg.bilateral_d <= 0:
-        errors.append(f"ascii.bilateral_d={cfg.bilateral_d} 必须 > 0")
-    if cfg.bilateral_sigma_color <= 0:
-        errors.append(
-            f"ascii.bilateral_sigma_color={cfg.bilateral_sigma_color} 必须 > 0"
-        )
-    if cfg.bilateral_sigma_space <= 0:
-        errors.append(
-            f"ascii.bilateral_sigma_space={cfg.bilateral_sigma_space} 必须 > 0"
-        )
-    if not 0.0 < cfg.canny_low_ratio <= 1.0:
-        errors.append(f"ascii.canny_low_ratio={cfg.canny_low_ratio} 必须位于 (0, 1]")
-    if cfg.merge_max_gap < 0:
-        errors.append(f"ascii.merge_max_gap={cfg.merge_max_gap} 必须 >= 0")
+    if a.denoise_strength <= 0:
+        errors.append(f"ascii.denoise_strength={a.denoise_strength} 必须 > 0")
+    if not 0.0 < a.canny_low_ratio <= 1.0:
+        errors.append(f"ascii.canny_low_ratio={a.canny_low_ratio} 必须位于 (0, 1]")
+    if a.merge_max_gap < 0:
+        errors.append(f"ascii.merge_max_gap={a.merge_max_gap} 必须 >= 0")
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
@@ -144,7 +128,6 @@ def validate_settings(cfg: DictConfig) -> None:
             "ramp_minimum_span",
             "canny_low",
             "canny_high",
-            "alpha_threshold",
         ],
     )
 
@@ -168,17 +151,7 @@ def validate_settings(cfg: DictConfig) -> None:
     errors += _collect_missing(
         r,
         "render",
-        [
-            "dither_method",
-            "pattern_style",
-            "dither_fraction_min",
-            "dither_fraction_max",
-            "dither_gradient_min",
-            "silhouette_dark_step",
-            "silhouette_dark_scale",
-            "internal_outline_dark_steps",
-            "internal_outline_dark_scale",
-        ],
+        ["dither_style", "silhouette_darkness", "internal_darkness"],
     )
 
     if errors:
@@ -209,8 +182,8 @@ def validate_settings(cfg: DictConfig) -> None:
         errors.append(
             f"perceive canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}"
         )
-    if not 0 <= p.alpha_threshold <= 255:
-        errors.append(f"perceive.alpha_threshold={p.alpha_threshold} 必须位于 [0, 255]")
+    if not 0 <= cfg.alpha_threshold <= 255:
+        errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
 
     # ── structure 业务规则 ──
     if not 0.0 < s.alpha_coverage <= 1.0:
@@ -233,32 +206,23 @@ def validate_settings(cfg: DictConfig) -> None:
         )
 
     # ── render 业务规则 ──
-    if r.dither_method not in ("none", "bayer", "floyd_steinberg", "pattern"):
+    if r.dither_style not in (
+        "none",
+        "ordered",
+        "diagonal",
+        "clustered",
+        "floyd_steinberg",
+    ):
         errors.append(
-            f"render.dither_method={r.dither_method!r} 必须是 none | bayer | floyd_steinberg | pattern"
+            "render.dither_style="
+            f"{r.dither_style!r} 必须是 none | ordered | diagonal | clustered | floyd_steinberg"
         )
-    if r.pattern_style not in ("ordered", "diagonal", "clustered"):
+    if not 0.0 <= r.silhouette_darkness <= 1.0:
         errors.append(
-            f"render.pattern_style={r.pattern_style!r} 必须是 ordered | diagonal | clustered"
+            f"render.silhouette_darkness={r.silhouette_darkness} 必须位于 [0, 1]"
         )
-    if not 0.0 <= r.dither_fraction_min < r.dither_fraction_max <= 1.0:
-        errors.append("render dither 分位参数必须满足 0 <= min < max <= 1")
-    if r.dither_gradient_min < 0:
-        errors.append(f"render.dither_gradient_min={r.dither_gradient_min} 必须 >= 0")
-    if r.silhouette_dark_step < 0:
-        errors.append(f"render.silhouette_dark_step={r.silhouette_dark_step} 必须 >= 0")
-    if not 0.0 <= r.silhouette_dark_scale <= 1.0:
-        errors.append(
-            f"render.silhouette_dark_scale={r.silhouette_dark_scale} 必须位于 [0, 1]"
-        )
-    if r.internal_outline_dark_steps < 0:
-        errors.append(
-            f"render.internal_outline_dark_steps={r.internal_outline_dark_steps} 必须 >= 0"
-        )
-    if not 0.0 <= r.internal_outline_dark_scale <= 1.0:
-        errors.append(
-            f"render.internal_outline_dark_scale={r.internal_outline_dark_scale} 必须位于 [0, 1]"
-        )
+    if not 0.0 <= r.internal_darkness <= 1.0:
+        errors.append(f"render.internal_darkness={r.internal_darkness} 必须位于 [0, 1]")
 
     if errors:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))

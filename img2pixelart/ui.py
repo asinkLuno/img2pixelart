@@ -34,12 +34,18 @@ from .config import validate_settings
 
 Control = QCheckBox | QComboBox | QDoubleSpinBox | QSpinBox
 CHOICES = {
-    "render.dither_method": ["none", "bayer", "floyd_steinberg", "pattern"],
-    "render.pattern_style": ["ordered", "diagonal", "clustered"],
+    "render.dither_style": [
+        "none",
+        "ordered",
+        "diagonal",
+        "clustered",
+        "floyd_steinberg",
+    ],
 }
 NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
     "width": (1, 1_000_000),
     "height": (1, 1_000_000),
+    "alpha_threshold": (0, 255),
     "perceive.denoise_d": (1, 1_000_000),
     "perceive.denoise_sigma": (0.000001, 1_000_000),
     "perceive.mean_shift_sp": (0.000001, 1_000_000),
@@ -50,20 +56,14 @@ NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
     "perceive.ramp_minimum_span": (0, 100),
     "perceive.canny_low": (0, 1_000_000),
     "perceive.canny_high": (0, 1_000_000),
-    "perceive.alpha_threshold": (0, 255),
     "structure.alpha_coverage": (0.000001, 1),
     "structure.edge_coverage": (0, 1),
     "structure.edge_min_length": (1, 1_000_000),
     "structure.edge_canny_support_radius": (0, 1_000_000),
     "structure.small_cleanup_passes": (0, 1_000_000),
     "structure.small_tier_smooth_majority": (1, 9),
-    "render.dither_fraction_min": (0, 1),
-    "render.dither_fraction_max": (0, 1),
-    "render.dither_gradient_min": (0, 1_000_000),
-    "render.silhouette_dark_step": (0, 1_000_000),
-    "render.silhouette_dark_scale": (0, 1),
-    "render.internal_outline_dark_steps": (0, 1_000_000),
-    "render.internal_outline_dark_scale": (0, 1),
+    "render.silhouette_darkness": (0, 1),
+    "render.internal_darkness": (0, 1),
 }
 
 
@@ -114,7 +114,11 @@ class MainWindow(QMainWindow):
         self._add_group(
             panel_layout,
             "全局",
-            {"width": self.cfg.width, "height": self.cfg.height},
+            {
+                "width": self.cfg.width,
+                "height": self.cfg.height,
+                "alpha_threshold": self.cfg.alpha_threshold,
+            },
         )
         for section, title in (
             ("perceive", "感知"),
@@ -277,10 +281,6 @@ class MainWindow(QMainWindow):
         except ValueError as error:
             message = str(error)
             invalid = {path for path in self.controls if path in message}
-            if "render dither 分位" in message:
-                invalid.update(
-                    ("render.dither_fraction_min", "render.dither_fraction_max")
-                )
             for path in invalid:
                 self.controls[path].setStyleSheet("border: 1px solid #d33")
             self.status.showMessage(message.replace("\n", " "))

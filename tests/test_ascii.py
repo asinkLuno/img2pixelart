@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import cv2
@@ -15,23 +16,22 @@ def _compose(**overrides: object):
                 *[f"ascii.{k}={v}" for k, v in overrides.items()],
             ],
         )
-    return cfg.ascii
+    return cfg
 
 
 def test_ascii_art_from_conf(tmp_path: Path) -> None:
     source = cv2.imread("tests/cup.png", cv2.IMREAD_UNCHANGED)
     assert source is not None
 
-    a = _compose(rows=40)
+    cfg = _compose(rows=40)
+    a = cfg.ascii
     lines = generate_ascii_art(
         source,
         rows=a.rows,
-        alpha_threshold=a.alpha_threshold,
-        alpha_coverage=a.alpha_coverage,
+        alpha_threshold=cfg.alpha_threshold,
+        subject_coverage=a.subject_coverage,
         line_art_white_ratio=a.line_art_white_ratio,
-        bilateral_d=a.bilateral_d,
-        bilateral_sigma_color=a.bilateral_sigma_color,
-        bilateral_sigma_space=a.bilateral_sigma_space,
+        denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
         debug_dir=tmp_path,
@@ -59,16 +59,15 @@ def test_ascii_art_rows_control_output_height(tmp_path: Path) -> None:
     source = cv2.imread("tests/cup.png", cv2.IMREAD_UNCHANGED)
     assert source is not None
 
-    a = _compose(rows=20)
+    cfg = _compose(rows=20)
+    a = cfg.ascii
     lines = generate_ascii_art(
         source,
         rows=a.rows,
-        alpha_threshold=a.alpha_threshold,
-        alpha_coverage=a.alpha_coverage,
+        alpha_threshold=cfg.alpha_threshold,
+        subject_coverage=a.subject_coverage,
         line_art_white_ratio=a.line_art_white_ratio,
-        bilateral_d=a.bilateral_d,
-        bilateral_sigma_color=a.bilateral_sigma_color,
-        bilateral_sigma_space=a.bilateral_sigma_space,
+        denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
         debug_dir=tmp_path,
@@ -76,3 +75,25 @@ def test_ascii_art_rows_control_output_height(tmp_path: Path) -> None:
 
     assert len(lines) == 20
     assert max(len(line) for line in lines) <= 20 * 2 + CELL_W - 1
+
+
+def test_default_ascii_output_is_stable(tmp_path: Path) -> None:
+    """默认配置的 ASCII 输出哈希锁定（#3 合并后应与改动前一致）。"""
+    source = cv2.imread("tests/cup.png", cv2.IMREAD_UNCHANGED)
+    assert source is not None
+
+    cfg = _compose()
+    a = cfg.ascii
+    lines = generate_ascii_art(
+        source,
+        rows=a.rows,
+        alpha_threshold=cfg.alpha_threshold,
+        subject_coverage=a.subject_coverage,
+        line_art_white_ratio=a.line_art_white_ratio,
+        denoise_strength=a.denoise_strength,
+        canny_low_ratio=a.canny_low_ratio,
+        merge_max_gap=a.merge_max_gap,
+        debug_dir=tmp_path,
+    )
+    digest = hashlib.sha256("\n".join(lines).encode()).hexdigest()
+    assert digest == "fde7ff5750aeb45b441b81b1ed4cbbd3d3e3e5b8ad8b046090c005a0e76c924b"

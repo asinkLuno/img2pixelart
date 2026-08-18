@@ -57,9 +57,9 @@ uv run img2pixelart crop-padding tests/cup.png
 uv run img2pixelart -m \
   img=tests/cup.png \
   perceive.ramp_steps=5,7,9 \
-  render.silhouette_dark_step=0,1,2 \
-  render.internal_outline_dark_steps=0,1,2 \
-  render.pattern_style=ordered,diagonal,clustered \
+  render.silhouette_darkness=0,0.5,1 \
+  render.internal_darkness=0,0.5,1 \
+  render.dither_style=ordered,diagonal,clustered \
   width=96 height=96
 ```
 
@@ -71,9 +71,9 @@ uv run img2pixelart -m \
 uv run img2pixelart -m \
   img=tests/cup.png \
   perceive.ramp_steps=5,7,9 \
-  render.silhouette_dark_step=0,1,2 \
-  render.internal_outline_dark_steps=0,1,2 \
-  render.pattern_style=ordered,diagonal,clustered \
+  render.silhouette_darkness=0,0.5,1 \
+  render.internal_darkness=0,0.5,1 \
+  render.dither_style=ordered,diagonal,clustered \
   width=96 height=96 \
   hydra/launcher=joblib \
   hydra.launcher.n_jobs=-1
@@ -85,14 +85,13 @@ uv run img2pixelart -m \
 |---|---|---|
 | `width` | 输出宽度 | 64 |
 | `height` | 输出高度 | 64 |
+| `alpha_threshold` | alpha ≥ 此值视为前景（像素画与 ASCII 共用） | 128 |
 | `perceive.ramp_steps` | 每色相的明度阶梯数 | 7 |
 | `perceive.requested_groups` | 色相族数量 | 3 |
-| `render.pattern_style` | 抖动风格：`ordered` / `diagonal` / `clustered` | ordered |
-| `render.silhouette_dark_step` | 外轮廓暗化级数（0=无） | 0 |
-| `render.silhouette_dark_scale` | 外轮廓亮度缩放（越小越深） | 0.75 |
-| `render.internal_outline_dark_steps` | 内部描边暗化级数（0=无） | 2 |
-| `render.internal_outline_dark_scale` | 内部描边亮度缩放（越小越深） | 0.6 |
-| `render.dither_fraction_min` | 抖动区域下限 | 0.18 |
-| `render.dither_fraction_max` | 抖动区域上限 | 0.82 |
+| `render.dither_style` | 抖动风格：`none` / `ordered` / `diagonal` / `clustered` / `floyd_steinberg` | ordered |
+| `render.silhouette_darkness` | 外轮廓暗化强度 0–1（0=无） | 1.0 |
+| `render.internal_darkness` | 内部描边暗化强度 0–1（0=无） | 1.0 |
+| `ascii.subject_coverage` | ASCII 字符格前景覆盖率阈值 | 0.5 |
+| `ascii.denoise_strength` | ASCII 照片边缘去噪强度（1.0 为默认） | 1.0 |
 
 完整参数见 `img2pixelart/conf/` 目录下各阶段 YAML 文件。

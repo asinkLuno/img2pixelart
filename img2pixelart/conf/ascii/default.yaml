@@ -1,15 +1,12 @@
 # ascii 阶段（图片转 ASCII 字符画）参数
 # 字符栅格固定为 8×16 半角等宽比例；输出行数由 rows 控制，列数等比自动推导
 rows: 60
-# 主体遮罩：源图 alpha >= alpha_threshold 视为前景，字符格前景覆盖率 >= alpha_coverage 才保留
-alpha_threshold: 128
-alpha_coverage: 0.5
+# 主体遮罩：源图 alpha >= 顶层 alpha_threshold 视为前景，字符格前景覆盖率 >= subject_coverage 才保留
+subject_coverage: 0.5
 # 线条画判定的亮背景占比
 line_art_white_ratio: 0.5
-# 照片边缘：双边滤波参数
-bilateral_d: 9
-bilateral_sigma_color: 75.0
-bilateral_sigma_space: 75.0
+# 照片边缘：双边滤波强度；1.0 复现默认参数
+denoise_strength: 1.0
 # Canny 低阈值 = Otsu * canny_low_ratio；高阈值 = Otsu
 canny_low_ratio: 0.33
 # 线段合并：同方向字符间允许填补的最大空格数
