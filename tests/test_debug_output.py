@@ -64,14 +64,10 @@ def test_render_returns_ndarray_only(tmp_path) -> None:
     p = cfg.perceive
     perceived = perceive(
         _source(),
-        denoise_d=p.denoise_d,
-        denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
         requested_groups=p.requested_groups,
-        chroma_floor=p.chroma_floor,
         ramp_steps=p.ramp_steps,
-        ramp_minimum_span=p.ramp_minimum_span,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=None,
         debug=False,

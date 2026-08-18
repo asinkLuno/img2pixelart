@@ -46,14 +46,10 @@ NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
     "width": (1, 1_000_000),
     "height": (1, 1_000_000),
     "alpha_threshold": (0, 255),
-    "perceive.denoise_d": (1, 1_000_000),
-    "perceive.denoise_sigma": (0.000001, 1_000_000),
     "perceive.mean_shift_sp": (0.000001, 1_000_000),
     "perceive.mean_shift_sr": (0.000001, 1_000_000),
     "perceive.requested_groups": (1, 1_000_000),
-    "perceive.chroma_floor": (0, 1_000_000),
     "perceive.ramp_steps": (3, 1_000_000),
-    "perceive.ramp_minimum_span": (0, 100),
     "structure.alpha_coverage": (0.000001, 1),
     "structure.edge_coverage": (0, 1),
     "structure.edge_min_length": (1, 1_000_000),
@@ -171,11 +167,7 @@ class MainWindow(QMainWindow):
             minimum, maximum = NUMERIC_LIMITS.get(path, (-1_000_000, 1_000_000))
             integer.setRange(int(minimum), int(maximum))
             integer.setSingleStep(
-                self.cfg.ui.size_step
-                if path in ("width", "height")
-                else 2
-                if path == "perceive.denoise_d"
-                else 1
+                self.cfg.ui.size_step if path in ("width", "height") else 1
             )
             integer.setValue(value)
             integer.valueChanged.connect(self.schedule_render)

@@ -5,7 +5,7 @@ import numpy as np
 from hydra import compose, initialize_config_module
 from omegaconf import DictConfig
 
-from img2pixelart.perceive import perceive
+from img2pixelart.perceive import _BILATERAL_D, _BILATERAL_SIGMA, perceive
 
 # perceive 返回 dict 的全部存活键（#4 后无死键）。
 LIVE_KEYS = {
@@ -39,14 +39,10 @@ def _perceive(tmp_path) -> tuple[dict, DictConfig]:
     assert source is not None
     result = perceive(
         source,
-        denoise_d=p.denoise_d,
-        denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
         requested_groups=p.requested_groups,
-        chroma_floor=p.chroma_floor,
         ramp_steps=p.ramp_steps,
-        ramp_minimum_span=p.ramp_minimum_span,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=None,
         debug=True,
@@ -77,7 +73,6 @@ def test_perceive_debug_numbering_is_continuous(tmp_path) -> None:
 def test_canny_uses_otsu_adaptive_thresholds(tmp_path) -> None:
     """Canny 阈值 = max(Otsu × 0.33, 10) / Otsu（AB-3 结论），输入为去噪灰度。"""
     result, cfg = _perceive(tmp_path)
-    p = cfg.perceive
     source = cv2.imread("tests/cup.png", cv2.IMREAD_UNCHANGED)
     assert source is not None
 
@@ -91,7 +86,9 @@ def test_canny_uses_otsu_adaptive_thresholds(tmp_path) -> None:
         bgr = source.copy()
         foreground = np.ones(bgr.shape[:2], dtype=bool)
 
-    denoised = cv2.bilateralFilter(bgr, p.denoise_d, p.denoise_sigma, p.denoise_sigma)
+    denoised = cv2.bilateralFilter(
+        bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA
+    )
     gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
     otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     expected = cv2.Canny(gray, max(float(otsu) * 0.33, 10.0), float(otsu))

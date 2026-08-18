@@ -10,14 +10,10 @@ from omegaconf import DictConfig, OmegaConf
 
 @dataclass
 class PerceiveConfig:
-    denoise_d: int
-    denoise_sigma: float
     mean_shift_sp: float
     mean_shift_sr: float
     requested_groups: int
-    chroma_floor: float
     ramp_steps: int
-    ramp_minimum_span: float
 
 
 @dataclass
@@ -74,7 +70,6 @@ def validate_ascii(cfg: DictConfig) -> None:
             "subject_coverage",
             "line_art_white_ratio",
             "denoise_strength",
-            "canny_low_ratio",
             "merge_max_gap",
         ],
     )
@@ -92,8 +87,6 @@ def validate_ascii(cfg: DictConfig) -> None:
         )
     if a.denoise_strength <= 0:
         errors.append(f"ascii.denoise_strength={a.denoise_strength} 必须 > 0")
-    if not 0.0 < a.canny_low_ratio <= 1.0:
-        errors.append(f"ascii.canny_low_ratio={a.canny_low_ratio} 必须位于 (0, 1]")
     if a.merge_max_gap < 0:
         errors.append(f"ascii.merge_max_gap={a.merge_max_gap} 必须 >= 0")
 
@@ -119,14 +112,10 @@ def validate_settings(cfg: DictConfig) -> None:
         p,
         "perceive",
         [
-            "denoise_d",
-            "denoise_sigma",
             "mean_shift_sp",
             "mean_shift_sr",
             "requested_groups",
-            "chroma_floor",
             "ramp_steps",
-            "ramp_minimum_span",
         ],
     )
 
@@ -157,24 +146,14 @@ def validate_settings(cfg: DictConfig) -> None:
         raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
 
     # ── perceive 业务规则 ──
-    if p.denoise_d <= 0 or p.denoise_d % 2 == 0:
-        errors.append(f"perceive.denoise_d={p.denoise_d} 必须是正奇数")
-    if p.denoise_sigma <= 0:
-        errors.append(f"perceive.denoise_sigma={p.denoise_sigma} 必须 > 0")
     if p.mean_shift_sp <= 0:
         errors.append(f"perceive.mean_shift_sp={p.mean_shift_sp} 必须 > 0")
     if p.mean_shift_sr <= 0:
         errors.append(f"perceive.mean_shift_sr={p.mean_shift_sr} 必须 > 0")
     if p.requested_groups < 1:
         errors.append(f"perceive.requested_groups={p.requested_groups} 必须 >= 1")
-    if p.chroma_floor < 0:
-        errors.append(f"perceive.chroma_floor={p.chroma_floor} 必须 >= 0")
     if p.ramp_steps < 3:
         errors.append(f"perceive.ramp_steps={p.ramp_steps} 必须 >= 3")
-    if p.ramp_minimum_span < 0 or p.ramp_minimum_span > 100:
-        errors.append(
-            f"perceive.ramp_minimum_span={p.ramp_minimum_span} 必须位于 [0, 100]"
-        )
     if not 0 <= cfg.alpha_threshold <= 255:
         errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
 

@@ -18,6 +18,8 @@ CELL_H = 16
 CELL_W = 8
 
 _LINE_ART_MAX_SATURATION: Final = 30.0
+# Canny 低阈值 = Otsu × 比例（#7 最终参数面：固定为内部常量，与 perceive 一致）。
+_CANNY_LOW_RATIO: Final = 0.33
 _CANNY_LOW_FLOOR: Final = 10.0
 _COLOR_EDGE_QUANTILE: Final = 0.99
 _EDGE_BLUR_SIGMA: Final = 2.0
@@ -73,7 +75,6 @@ def _photo_edges(
     target_h: int,
     target_w: int,
     denoise_strength: float,
-    canny_low_ratio: float,
 ) -> np.ndarray:
     """照片边缘：亮度 Canny 与 Lab 色彩梯度合并后细化。
 
@@ -88,7 +89,7 @@ def _photo_edges(
     otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     luma_edges = cv2.Canny(
         gray,
-        max(float(otsu) * canny_low_ratio, _CANNY_LOW_FLOOR),
+        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
         float(otsu),
     )
 
@@ -292,7 +293,6 @@ def generate_ascii_art(
     subject_coverage: float,
     line_art_white_ratio: float,
     denoise_strength: float,
-    canny_low_ratio: float,
     merge_max_gap: int,
     debug: bool,
     debug_dir: Path,
@@ -356,7 +356,6 @@ def generate_ascii_art(
             grid_h,
             grid_w,
             denoise_strength,
-            canny_low_ratio,
         )
     _save("ascii_edges", edges)
 

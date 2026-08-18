@@ -22,8 +22,16 @@ LEGACY_ASCII_KEYS = (
     "bilateral_d",
     "bilateral_sigma_color",
     "bilateral_sigma_space",
+    "canny_low_ratio",
 )
-LEGACY_PERCEIVE_KEYS = ("canny_low", "canny_high")
+LEGACY_PERCEIVE_KEYS = (
+    "canny_low",
+    "canny_high",
+    "denoise_d",
+    "denoise_sigma",
+    "chroma_floor",
+    "ramp_minimum_span",
+)
 
 
 def _compose() -> DictConfig:
@@ -50,6 +58,8 @@ def test_merged_keys_have_defaults() -> None:
     assert cfg.render.internal_darkness == 1.0
     assert cfg.ascii.subject_coverage == 0.5
     assert cfg.ascii.denoise_strength == 1.0
+    assert cfg.perceive.mean_shift_sp == 8.0
+    assert cfg.perceive.ramp_steps == 7
 
 
 def test_validation_passes_on_defaults() -> None:
