@@ -87,6 +87,32 @@ img2pixelart -m \
   hydra.launcher.n_jobs=-1
 ```
 
+### 视觉 A/B 基线（行为敏感变更）
+
+Issue [#1](https://github.com/asinkLuno/img2pixelart/issues/1) 的基准由受版本控制的
+`tools/visual_regression.py` 固化。它覆盖 `tests/cup.png`、
+`tests/cup_no_padding.png`、`docs/assets/banana_orig.png` 与
+`docs/assets/chair_orig.png`，像素画在 `48 / 64 / 96` 方格运行，ASCII 同时覆盖
+`rows=40 / 60`。生成物仅落在（并被 Git 忽略的）
+`outputs/ab/<topic>/<UTC timestamp>/`。
+
+```bash
+# 当前实现的完整像素画 + ASCII 基线矩阵
+uv run python tools/visual_regression.py baseline
+
+# 每个命令生成 A/B 的 result.png、调试 palette、comparison.png 和 metrics.json
+uv run python tools/visual_regression.py ab-1  # bayer vs pattern/ordered
+uv run python tools/visual_regression.py ab-2  # bilateral → mean-shift vs mean-shift only
+uv run python tools/visual_regression.py ab-3  # fixed Canny vs ratio×Otsu Canny
+```
+
+P2 的 B 侧在临时包副本中应用严格的实验补丁，不修改工作树；若目标实现移动，补丁会
+显式失败而不是悄悄比较了错误的算法。评审时打开 `comparison.png`，再读取
+`metrics.json` 的逐像素差异比例、平均通道差异和 `05_palette` /
+`22_palette_strip` 一致性。数值用于定位差异，结论仍以 **B 相对 A 没有可感知质量
+回退** 的人工评审为准；将 `AB-N: 结论 / 倾向 / 证据（输出路径或贴图）` 作为 issue
+评论。ASCII 矩阵是基线覆盖，当前三个 AB 仅比较像素画流水线。
+
 ## 关键参数
 
 | 参数 | 说明 | 默认值 |
