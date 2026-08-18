@@ -86,17 +86,17 @@ def _largest_reasonable_components(mask: BoolArray, min_fraction: float) -> Bool
 # ---------------------------------------------------------------------------
 
 
-def down_area(image: np.ndarray, size: int) -> FloatArray:
-    """用面积平均（INTER_AREA）把图像缩到 size x size。"""
-    return cv2.resize(image, (size, size), interpolation=cv2.INTER_AREA).astype(
+def down_area(image: np.ndarray, width: int, height: int) -> FloatArray:
+    """用面积平均（INTER_AREA）把图像缩到 width x height。"""
+    return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA).astype(
         np.float32
     )
 
 
-def down_mask(mask: np.ndarray, size: int, threshold: float) -> BoolArray:
+def down_mask(mask: np.ndarray, width: int, height: int, threshold: float) -> BoolArray:
     """掩码降采样：目标网格内原掩码的覆盖率 >= threshold 才置 1。"""
     average = cv2.resize(
-        mask.astype(np.float32), (size, size), interpolation=cv2.INTER_AREA
+        mask.astype(np.float32), (width, height), interpolation=cv2.INTER_AREA
     )
     if mask.max(initial=0) > 1:
         average = average / 255.0
@@ -106,14 +106,15 @@ def down_mask(mask: np.ndarray, size: int, threshold: float) -> BoolArray:
 def down_labels_majority(
     labels: LabelArray,
     valid: BoolArray,
-    size: int,
+    width: int,
+    height: int,
     default: int = -1,
 ) -> LabelArray:
     """标签图降采样：每个目标网格取原区域内有效像素中出现次数最多的标签。"""
     h, w = labels.shape
-    out = np.full((size, size), default, dtype=labels.dtype)
-    rows = list(_cells(h, size))
-    cols = list(_cells(w, size))
+    out = np.full((height, width), default, dtype=labels.dtype)
+    rows = list(_cells(h, height))
+    cols = list(_cells(w, width))
     for iy, (y0, y1) in enumerate(rows):
         for ix, (x0, x1) in enumerate(cols):
             local_valid = valid[y0:y1, x0:x1]
@@ -126,10 +127,16 @@ def down_labels_majority(
     return out
 
 
-def down_edges_coverage(edges: np.ndarray, size: int, threshold: float) -> BoolArray:
+def down_edges_coverage(
+    edges: np.ndarray, width: int, height: int, threshold: float
+) -> BoolArray:
     """边缘图降采样：网格内边缘覆盖率 >= threshold 才保留为边缘像素。"""
     avg = (
-        cv2.resize(edges.astype(np.float32), (size, size), interpolation=cv2.INTER_AREA)
+        cv2.resize(
+            edges.astype(np.float32),
+            (width, height),
+            interpolation=cv2.INTER_AREA,
+        )
         / 255.0
     )
     return avg >= threshold
@@ -140,16 +147,17 @@ def _down_family_weighted_L(
     family_labels: LabelArray,
     family_down: LabelArray,
     foreground: BoolArray,
-    size: int,
+    width: int,
+    height: int,
 ) -> FloatArray:
     """对每个目标网格，只统计获胜 family 的前景像素明度均值。
 
     没有有效像素的格子 fallback 到整格面积均值。
     """
     h, w = l_channel.shape
-    out = np.zeros((size, size), dtype=np.float32)
-    rows = list(_cells(h, size))
-    cols = list(_cells(w, size))
+    out = np.zeros((height, width), dtype=np.float32)
+    rows = list(_cells(h, height))
+    cols = list(_cells(w, width))
 
     for iy, (y0, y1) in enumerate(rows):
         for ix, (x0, x1) in enumerate(cols):
@@ -351,7 +359,8 @@ def _simplify_small_sprite(
     tier_down: LabelArray,
     canny_down: BoolArray,
     internal_detail: BoolArray,
-    size: int,
+    width: int,
+    height: int,
     small_cleanup_threshold: int,
     small_hole_close: bool,
     small_cleanup_passes: int,
@@ -367,7 +376,8 @@ def _simplify_small_sprite(
     小网格上面积平均会留下大量杂点与不稳定的明度过渡，通过
     闭孔、去碎块、局部多数平滑等操作让画面更干净。
     """
-    if size > small_cleanup_threshold:
+    output_size = max(width, height)
+    if output_size > small_cleanup_threshold:
         return {
             "alpha_down": alpha_down,
             "family_down": family_down,
@@ -415,7 +425,7 @@ def _simplify_small_sprite(
 
     # 网格太小时 Canny 细节基本无意义，直接关闭
     canny = canny_down & alpha
-    if size <= small_skip_canny_under:
+    if output_size <= small_skip_canny_under:
         canny[:] = False
 
     support = bool_dilate(silhouette | family_boundary, edge_canny_support_radius)
@@ -450,7 +460,8 @@ def _simplify_small_sprite(
 def structure(
     perceived: dict,
     *,
-    size: int,
+    width: int,
+    height: int,
     alpha_coverage: float,
     edge_coverage: float,
     edge_min_length: int,
@@ -464,7 +475,7 @@ def structure(
     small_skip_canny_under: int,
     debug_dir: Path,
 ) -> dict:
-    """阶段 B：把全分辨率信息降采样到 size x size 网格，推导轮廓与内部细节。
+    """阶段 B：把全分辨率信息降采样到 width x height 网格，推导轮廓与内部细节。
 
     perceived 为 :func:`perceive` 的输出字典。
     debug_dir 非空时，每步结果即时保存为 PNG。
@@ -476,9 +487,9 @@ def structure(
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)
 
     # ── 降采样 ──
-    alpha_down = down_mask(perceived["alpha_full"], size, alpha_coverage)
+    alpha_down = down_mask(perceived["alpha_full"], width, height, alpha_coverage)
     family_down = down_labels_majority(
-        perceived["family_labels"], perceived["foreground"], size
+        perceived["family_labels"], perceived["foreground"], width, height
     )
     family_down = repair_missing_family(family_down, alpha_down)
     l_down = _down_family_weighted_L(
@@ -486,7 +497,8 @@ def structure(
         perceived["family_labels"],
         family_down,
         perceived["foreground"],
-        size,
+        width,
+        height,
     )
     tier_down = _quantize_tiers(l_down, family_down, alpha_down, perceived["ramp_l"])
 
@@ -495,7 +507,8 @@ def structure(
     # ── 轮廓、Canny 细节、色相族边界、色阶边界 ──
     silhouette = alpha_inner_boundary(alpha_down)
     canny_down = (
-        down_edges_coverage(perceived["canny"], size, edge_coverage) & alpha_down
+        down_edges_coverage(perceived["canny"], width, height, edge_coverage)
+        & alpha_down
     )
     family_boundary = label_boundary(family_down, alpha_down)
     shade_boundary = label_boundary(tier_down, alpha_down)
@@ -528,7 +541,8 @@ def structure(
         tier_down=tier_down,
         canny_down=canny_down,
         internal_detail=internal_detail,
-        size=size,
+        width=width,
+        height=height,
         small_cleanup_threshold=small_cleanup_threshold,
         small_hole_close=small_hole_close,
         small_cleanup_passes=small_cleanup_passes,

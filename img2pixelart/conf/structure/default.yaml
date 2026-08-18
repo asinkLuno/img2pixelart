@@ -1,5 +1,5 @@
 # structure 阶段（降采样 / 轮廓推导 / 小精灵清理）参数
-# 像素画尺寸由顶层 size 控制（默认 96），命令行传递：img2pixelart ... size=128
+# 像素画尺寸由顶层 width/height 控制，命令行传递：img2pixelart ... width=128 height=72
 alpha_coverage: 0.16
 edge_coverage: 0.03
 edge_min_length: 2

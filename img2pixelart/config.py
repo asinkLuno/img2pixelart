@@ -4,6 +4,7 @@
 """
 
 from dataclasses import dataclass
+from itertools import pairwise
 
 from omegaconf import DictConfig, OmegaConf
 
@@ -79,6 +80,84 @@ def _collect_missing(cfg: DictConfig, prefix: str, fields: list[str]) -> list[st
     return errors
 
 
+def validate_ascii(cfg: DictConfig) -> None:
+    """ascii 阶段业务规则校验。"""
+    errors: list[str] = []
+
+    errors += _collect_missing(
+        cfg,
+        "ascii",
+        [
+            "rows",
+            "alpha_threshold",
+            "alpha_coverage",
+            "line_art_white_ratio",
+            "line_art_max_saturation",
+            "bilateral_d",
+            "bilateral_sigma_color",
+            "bilateral_sigma_space",
+            "canny_low_ratio",
+            "canny_low_floor",
+            "color_edge_quantile",
+            "edge_blur_sigma",
+            "intensity_breaks",
+            "merge_max_gap",
+        ],
+    )
+
+    if errors:
+        raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
+
+    if cfg.rows < 1:
+        errors.append(f"ascii.rows={cfg.rows} 必须 >= 1")
+    if not 0 <= cfg.alpha_threshold <= 255:
+        errors.append(f"ascii.alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")
+    if not 0.0 < cfg.alpha_coverage <= 1.0:
+        errors.append(f"ascii.alpha_coverage={cfg.alpha_coverage} 必须位于 (0, 1]")
+    if not 0.0 <= cfg.line_art_white_ratio <= 1.0:
+        errors.append(
+            f"ascii.line_art_white_ratio={cfg.line_art_white_ratio} 必须位于 [0, 1]"
+        )
+    if cfg.line_art_max_saturation < 0:
+        errors.append(
+            f"ascii.line_art_max_saturation={cfg.line_art_max_saturation} 必须 >= 0"
+        )
+    if cfg.bilateral_d <= 0:
+        errors.append(f"ascii.bilateral_d={cfg.bilateral_d} 必须 > 0")
+    if cfg.bilateral_sigma_color <= 0:
+        errors.append(
+            f"ascii.bilateral_sigma_color={cfg.bilateral_sigma_color} 必须 > 0"
+        )
+    if cfg.bilateral_sigma_space <= 0:
+        errors.append(
+            f"ascii.bilateral_sigma_space={cfg.bilateral_sigma_space} 必须 > 0"
+        )
+    if not 0.0 < cfg.canny_low_ratio <= 1.0:
+        errors.append(f"ascii.canny_low_ratio={cfg.canny_low_ratio} 必须位于 (0, 1]")
+    if cfg.canny_low_floor < 0:
+        errors.append(f"ascii.canny_low_floor={cfg.canny_low_floor} 必须 >= 0")
+    if not 0.0 < cfg.color_edge_quantile <= 1.0:
+        errors.append(
+            f"ascii.color_edge_quantile={cfg.color_edge_quantile} 必须位于 (0, 1]"
+        )
+    if cfg.edge_blur_sigma <= 0:
+        errors.append(f"ascii.edge_blur_sigma={cfg.edge_blur_sigma} 必须 > 0")
+
+    breaks = list(cfg.intensity_breaks)
+    if (
+        len(breaks) != 4
+        or any(b <= 0 for b in breaks)
+        or any(b2 <= b1 for b1, b2 in pairwise(breaks))
+    ):
+        errors.append(f"ascii.intensity_breaks={breaks} 必须是 4 个严格递增的正数")
+
+    if cfg.merge_max_gap < 0:
+        errors.append(f"ascii.merge_max_gap={cfg.merge_max_gap} 必须 >= 0")
+
+    if errors:
+        raise ValueError("配置校验失败：\n  - " + "\n  - ".join(errors))
+
+
 def validate_settings(cfg: DictConfig) -> None:
     """业务规则校验，违反规则时抛 ValueError（列出全部问题）。"""
     p = cfg.perceive
@@ -86,6 +165,11 @@ def validate_settings(cfg: DictConfig) -> None:
     r = cfg.render
 
     errors: list[str] = []
+
+    if cfg.width < 1:
+        errors.append(f"width={cfg.width} 必须 >= 1")
+    if cfg.height < 1:
+        errors.append(f"height={cfg.height} 必须 >= 1")
 
     # ── perceive 缺失字段 ──
     errors += _collect_missing(

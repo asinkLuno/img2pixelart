@@ -35,7 +35,7 @@ img2pixelart-ui
 ### 单张转换
 
 ```bash
-img2pixelart img=docs/assets/banana_orig.png size=96
+img2pixelart img=docs/assets/banana_orig.png width=96 height=96
 ```
 
 输出在当前目录的 `result.png`。
@@ -44,8 +44,21 @@ img2pixelart img=docs/assets/banana_orig.png size=96
 都沿匹配后的 ramp 渲染，因此所有非透明像素都来自调色板：
 
 ```bash
-img2pixelart img=docs/assets/banana_orig.png palette=palette/resurrect-64.txt size=96
+img2pixelart img=docs/assets/banana_orig.png palette=palette/resurrect-64.txt width=96 height=96
 ```
+
+### 图片转 ASCII 字符画
+
+```bash
+img2pixelart ascii img=docs/assets/banana_orig.png ascii.rows=60
+# → outputs/single/<ts>/result_ascii.txt
+```
+
+输出行数由 `ascii.rows` 控制，列数按图片宽高比自动推导（字符栅格按 8×16
+半角等宽比例）。流程与像素画共享边缘算法：线条画走 Otsu 二值化 +
+Zhang-Suen 细化，照片走双边滤波 Canny 后细化；每个字符格用 Sobel 梯度
+方向选择横 / 竖 / 斜字符，边缘密度决定线宽。带 alpha 通道的源图用 alpha
+做主体遮罩（替代 SAM 分割），透明背景自动置空。
 
 ### 裁边
 
@@ -68,7 +81,7 @@ img2pixelart -m \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
   render.pattern_style=ordered,diagonal,clustered \
-  size=96
+  width=96 height=96
 ```
 
 ### 并行扫网
@@ -82,7 +95,7 @@ img2pixelart -m \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
   render.pattern_style=ordered,diagonal,clustered \
-  size=96 \
+  width=96 height=96 \
   hydra/launcher=joblib \
   hydra.launcher.n_jobs=-1
 ```
@@ -117,7 +130,8 @@ P2 的 B 侧在临时包副本中应用严格的实验补丁，不修改工作�
 
 | 参数 | 说明 | 默认值 |
 |---|---|---|
-| `size` | 输出像素画尺寸 | 96 |
+| `width` | 输出宽度 | 64 |
+| `height` | 输出高度 | 64 |
 | `perceive.ramp_steps` | 每色相的明度阶梯数 | 7 |
 | `perceive.requested_groups` | 色相族数量 | 3 |
 | `render.pattern_style` | 抖动风格：`ordered` / `diagonal` / `clustered` | ordered |

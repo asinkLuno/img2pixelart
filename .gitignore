@@ -15,6 +15,7 @@ output/
 tmp/
 tests/*.png
 
-# Visual A/B experiment evidence (kept locally; never commit generated matrices).
-outputs/ab/
 /site
+
+# VS Code personal keybindings
+.vscode/
