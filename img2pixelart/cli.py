@@ -8,7 +8,8 @@ from hydra.experimental.callback import Callback
 from loguru import logger
 from omegaconf import DictConfig
 
-from .config import validate_settings
+from .ascii import generate_ascii_art
+from .config import validate_ascii, validate_settings
 from .fit import load_palette, quantize_to_ramps
 from .perceive import perceive
 from .render import render
@@ -61,14 +62,15 @@ def run_pipeline(
 
     # 无有效色相族 → 直接返回透明图
     if F_src == 0:
-        empty_bgr = np.zeros((cfg.size, cfg.size, 3), dtype=np.uint8)
-        empty_alpha = np.zeros((cfg.size, cfg.size), dtype=np.float32)
+        empty_bgr = np.zeros((cfg.height, cfg.width, 3), dtype=np.uint8)
+        empty_alpha = np.zeros((cfg.height, cfg.width), dtype=np.float32)
         return empty_bgr, empty_alpha
 
     s = cfg.structure
     struct = structure(
         perceived,
-        size=cfg.size,
+        width=cfg.width,
+        height=cfg.height,
         alpha_coverage=s.alpha_coverage,
         edge_coverage=s.edge_coverage,
         edge_min_length=s.edge_min_length,
@@ -84,8 +86,8 @@ def run_pipeline(
     )
     logger.info(
         "structure: {}×{} grid, {} fg pixels, small_cleanup={}",
-        cfg.size,
-        cfg.size,
+        cfg.width,
+        cfg.height,
         struct["alpha_down"].sum(),
         struct["small_cleanup_applied"],
     )
@@ -157,6 +159,44 @@ def _hydra_main(cfg: DictConfig) -> None:
     logger.info("output: {}/{}", Path.cwd(), out)
 
 
+@hydra.main(version_base=None, config_path="conf", config_name="config")
+def _ascii_main(cfg: DictConfig) -> None:
+    """将图片转换为 ASCII 字符画（Hydra pipeline）。"""
+    validate_ascii(cfg.ascii)
+
+    img_path = Path(hydra.utils.to_absolute_path(cfg.img))
+    bgra = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
+    if bgra is None:
+        raise ValueError(f"cannot read image: {img_path}")
+    if bgra.ndim != 3 or bgra.shape[2] not in (3, 4):
+        raise ValueError(f"image must be BGR or BGRA, got shape {bgra.shape}")
+
+    # Hydra 已 chdir 到输出目录，中间产物和结果直接写当前目录
+    a = cfg.ascii
+    lines = generate_ascii_art(
+        bgra,
+        rows=a.rows,
+        alpha_threshold=a.alpha_threshold,
+        alpha_coverage=a.alpha_coverage,
+        line_art_white_ratio=a.line_art_white_ratio,
+        line_art_max_saturation=a.line_art_max_saturation,
+        bilateral_d=a.bilateral_d,
+        bilateral_sigma_color=a.bilateral_sigma_color,
+        bilateral_sigma_space=a.bilateral_sigma_space,
+        canny_low_ratio=a.canny_low_ratio,
+        canny_low_floor=a.canny_low_floor,
+        color_edge_quantile=a.color_edge_quantile,
+        edge_blur_sigma=a.edge_blur_sigma,
+        intensity_breaks=list(a.intensity_breaks),
+        merge_max_gap=a.merge_max_gap,
+        debug_dir=Path.cwd(),
+    )
+
+    out = Path("result_ascii.txt")
+    out.write_text("\n".join(lines), encoding="utf-8")
+    logger.info("output: {}/{} ({} rows)", Path.cwd(), out, len(lines))
+
+
 def crop_padding(img_path: Path) -> None:
     """裁掉图片边缘空白区域，保存为 {stem}_no_padding{ext}。
 
@@ -188,7 +228,7 @@ def crop_padding(img_path: Path) -> None:
     y_min, y_max = np.where(rows)[0][[0, -1]]
     x_min, x_max = np.where(cols)[0][[0, -1]]
 
-    margin = max(2, min(h, w) // 20)
+    margin = min(h, w) // 20
     y_min = max(0, int(y_min) - margin)
     y_max = min(h, int(y_max) + margin)
     x_min = max(0, int(x_min) - margin)
@@ -325,6 +365,7 @@ def main() -> None:
 
     用法:
       img2pixelart img=test.png                        # 像素画转换
+      img2pixelart ascii img=test.png ascii.rows=60    # ASCII 字符画
       img2pixelart crop-padding <image_path>           # 裁边
     """
     if len(sys.argv) > 1 and sys.argv[1] == "crop-padding":
@@ -332,6 +373,10 @@ def main() -> None:
             print("usage: img2pixelart crop-padding <image_path>", file=sys.stderr)
             raise SystemExit(2)
         crop_padding(Path(sys.argv[2]))
+    elif len(sys.argv) > 1 and sys.argv[1] == "ascii":
+        # 摘掉子命令名，剩余参数交给 hydra 解析为配置覆盖
+        del sys.argv[1]
+        _ascii_main()
     else:
         _hydra_main()
 

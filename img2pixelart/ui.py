@@ -38,6 +38,8 @@ CHOICES = {
     "render.pattern_style": ["ordered", "diagonal", "clustered"],
 }
 NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
+    "width": (1, 1_000_000),
+    "height": (1, 1_000_000),
     "perceive.denoise_d": (1, 1_000_000),
     "perceive.denoise_sigma": (0.000001, 1_000_000),
     "perceive.mean_shift_sp": (0.000001, 1_000_000),
@@ -117,7 +119,11 @@ class MainWindow(QMainWindow):
         self.palette_label.setWordWrap(True)
         panel_layout.addWidget(self.palette_label)
 
-        self._add_group(panel_layout, "全局", {"size": self.cfg.size})
+        self._add_group(
+            panel_layout,
+            "全局",
+            {"width": self.cfg.width, "height": self.cfg.height},
+        )
         for section, title in (
             ("perceive", "感知"),
             ("structure", "结构"),
@@ -172,7 +178,7 @@ class MainWindow(QMainWindow):
             integer.setRange(int(minimum), int(maximum))
             integer.setSingleStep(
                 self.cfg.ui.size_step
-                if path == "size"
+                if path in ("width", "height")
                 else 2
                 if path == "perceive.denoise_d"
                 else 1

@@ -29,17 +29,6 @@ def _bgr_u8_to_lab_f32(bgr: np.ndarray) -> FloatArray:
     return cv2.cvtColor(bgr_f32, cv2.COLOR_BGR2LAB)
 
 
-def _pad_to_square(img, side_len):
-    h, w = img.shape[:2]
-    top = (side_len - h) // 2
-    bottom = side_len - h - top
-    left = (side_len - w) // 2
-    right = side_len - w - left
-    return cv2.copyMakeBorder(
-        img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0
-    )
-
-
 def _normalize_vectors(vectors: FloatArray) -> FloatArray:
     norms = np.linalg.norm(vectors, axis=-1, keepdims=True)
     return vectors / np.maximum(norms, np.float32(1e-6))
@@ -491,7 +480,7 @@ def perceive(
     if bgra.shape[2] == 4:
         source_alpha = bgra[..., 3]
         foreground = source_alpha >= alpha_threshold
-        alpha_source = source_alpha.copy()
+        alpha_full = source_alpha.copy()
         bgr = bgra[..., :3].copy()
         # 填充透明区域，防止其中残留的 RGB 在滤波时污染前景边缘。
         # ponytail: cv2.inpaint 对大面积透明效果有限，严重时改用 alpha 加权统计。
@@ -501,7 +490,7 @@ def perceive(
     else:
         bgr = bgra.copy()
         foreground = np.ones(bgr.shape[:2], dtype=bool)
-        alpha_source = np.full(bgr.shape[:2], 255, dtype=np.uint8)
+        alpha_full = np.full(bgr.shape[:2], 255, dtype=np.uint8)
 
     # ── 去噪 + 色块化 ──
     denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)
@@ -510,18 +499,6 @@ def perceive(
 
     blocks = cv2.pyrMeanShiftFiltering(denoised, mean_shift_sp, mean_shift_sr)
     _save("03_blocks", blocks)
-
-    # ── 补正方形（记录偏移和原始尺寸） ──
-    original_h, original_w = bgr.shape[:2]
-    side_len = max(original_h, original_w)
-    top = (side_len - original_h) // 2
-    left = (side_len - original_w) // 2
-
-    bgr = _pad_to_square(bgr, side_len)
-    denoised = _pad_to_square(denoised, side_len)
-    blocks = _pad_to_square(blocks, side_len)
-    foreground = _pad_to_square(foreground.astype(np.uint8), side_len).astype(bool)
-    alpha_full = _pad_to_square(alpha_source, side_len)
 
     # ── uint8 BGR → float32 CIE Lab ──
     blocks_lab = _bgr_u8_to_lab_f32(blocks)
@@ -618,6 +595,4 @@ def perceive(
         "foreground": foreground,
         "alpha_full": alpha_full,
         "canny": canny,
-        "original_shape": (original_h, original_w),
-        "pad_offset": (top, left),
     }
