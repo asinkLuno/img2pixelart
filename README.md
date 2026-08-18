@@ -100,6 +100,18 @@ img2pixelart -m \
   hydra.launcher.n_jobs=-1
 ```
 
+### 调试输出
+
+默认只写 `result.png`；加 `debug=true` 后，perceive / structure / render / ascii 各阶段的中间
+PNG（`01_original` … `22_palette_strip` 及 ascii 调试图）会写入输出目录：
+
+```bash
+img2pixelart img=docs/assets/banana_orig.png width=96 height=96 debug=true
+img2pixelart ascii img=docs/assets/banana_orig.png ascii.rows=60 debug=true
+```
+
+GUI 预览默认不写调试产物，与 CLI 默认一致。
+
 ### 视觉 A/B 基线（行为敏感变更）
 
 Issue [#1](https://github.com/asinkLuno/img2pixelart/issues/1) 的基准由受版本控制的
@@ -136,6 +148,7 @@ AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并
 | `alpha_threshold` | alpha ≥ 此值视为前景（像素画与 ASCII 共用） | 128 |
 | `perceive.ramp_steps` | 每色相的明度阶梯数 | 7 |
 | `perceive.requested_groups` | 色相族数量 | 3 |
+| `debug` | 调试输出开关：`true` 时各阶段中间 PNG 写入输出目录 | false |
 | `render.dither_style` | 抖动风格：`none` / `ordered` / `diagonal` / `clustered` / `floyd_steinberg` | ordered |
 | `render.silhouette_darkness` | 外轮廓暗化强度 0–1（0=无） | 1.0 |
 | `render.internal_darkness` | 内部描边暗化强度 0–1（0=无） | 1.0 |

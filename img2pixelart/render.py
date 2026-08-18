@@ -187,7 +187,7 @@ def _render_floyd(
     ramps: FloatArray,
     mask: BoolArray,
     steps_per_family: NDArray[np.int32],
-) -> tuple[FloatArray, LabelArray]:
+) -> FloatArray:
     """Floyd–Steinberg 误差扩散抖动。
 
     误差只扩散给同一色相族的像素，避免跨族混色。
@@ -222,7 +222,7 @@ def _render_floyd(
                     work[ny, nx] += error * weight
     safe_family = np.maximum(families, 0)
     bgr = ramps[safe_family, chosen]
-    return bgr.astype(np.float32), chosen
+    return bgr.astype(np.float32)
 
 
 def _render_pattern(
@@ -232,7 +232,7 @@ def _render_pattern(
     mask: BoolArray,
     pattern_set: np.ndarray,
     steps_per_family: NDArray[np.int32],
-) -> tuple[FloatArray, LabelArray]:
+) -> FloatArray:
     """微图案抖动：用 4×4 图案字典在相邻两档之间选择。
 
     每个像素根据连续位置的小数部分量化到 0/16..16/16 覆盖率，
@@ -263,7 +263,7 @@ def _render_pattern(
     )
 
     bgr = ramps[safe_family, chosen]
-    return bgr.astype(np.float32), chosen
+    return bgr.astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -279,8 +279,9 @@ def render(
     silhouette_darkness: float,
     internal_darkness: float,
     steps_per_family: NDArray[np.int32],
+    debug: bool,
     debug_dir: Path,
-) -> tuple[np.ndarray, dict]:
+) -> np.ndarray:
     """阶段 C：按 (色相族, 明度档) 取色渲染，叠加同色相轮廓。
 
     dither_style: none | ordered | diagonal | clustered | floyd_steinberg。
@@ -291,12 +292,14 @@ def render(
     perceived 为 :func:`perceive` 的输出字典。
     struct 为 :func:`structure` 的输出字典。
     steps_per_family 为各族原生长度，支持变长 ramp。
-    debug_dir 非空时，每步结果即时保存为 PNG。
+    debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
 
-    返回 (final_bgr, meta)。
+    返回 final_bgr（uint8 BGR）。
     """
 
     def _save(name: str, img: np.ndarray) -> None:
+        if not debug:
+            return
         if img.dtype == bool:
             img = img.astype(np.uint8) * 255
         cv2.imwrite(str(debug_dir / f"{name}.png"), img)
@@ -331,20 +334,19 @@ def render(
 
     if dither_style in PATTERNS:
         pattern_set = PATTERNS[dither_style]
-        dithered_bgr, rendered_steps = _render_pattern(
+        dithered_bgr = _render_pattern(
             position, families, ramps, dither_mask, pattern_set, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
     elif dither_style == "floyd_steinberg":
-        dithered_bgr, rendered_steps = _render_floyd(
+        dithered_bgr = _render_floyd(
             position, families, ramps, dither_mask, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
     elif dither_style == "none":
         dithered_bgr = hard_bgr.copy()
-        rendered_steps = hard_tiers.copy()
         final_bgr = hard_bgr.copy()
         dither_mask[:] = False
     else:
@@ -378,11 +380,4 @@ def render(
     _save("21_final", final_u8)
     _save("22_palette_strip", make_palette_strip(ramps, steps_per_family))
 
-    return final_u8, {
-        "hard_bgr": hard_bgr.astype(np.uint8),
-        "dithered_bgr": dithered_u8,
-        "dither_mask": dither_mask,
-        "continuous_position": position,
-        "rendered_steps": rendered_steps,
-        "palette_strip": make_palette_strip(ramps, steps_per_family),
-    }
+    return final_u8

@@ -34,6 +34,7 @@ def test_ascii_art_from_conf(tmp_path: Path) -> None:
         denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
+        debug=True,
         debug_dir=tmp_path,
     )
 
@@ -70,6 +71,7 @@ def test_ascii_art_rows_control_output_height(tmp_path: Path) -> None:
         denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
+        debug=True,
         debug_dir=tmp_path,
     )
 
@@ -93,6 +95,7 @@ def test_default_ascii_output_is_stable(tmp_path: Path) -> None:
         denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
+        debug=True,
         debug_dir=tmp_path,
     )
     digest = hashlib.sha256("\n".join(lines).encode()).hexdigest()

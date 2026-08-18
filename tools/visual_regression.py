@@ -142,6 +142,9 @@ def _hydra_pixel_command(
             f"img={source.resolve()}",
             f"width={size}",
             f"height={size}",
+            # A/B 指标依赖调试中间产物（05_palette / 22_palette_strip），
+            # 显式开启 debug 输出（#5 默认关闭）。
+            "debug=true",
             *variant.overrides,
             f"hydra.sweep.dir={output_dir.resolve()}",
             "hydra.sweep.subdir=${hydra:job.override_dirname}",

@@ -10,6 +10,7 @@ from tools.visual_regression import (
     SIZES,
     _apply_patch,
     _comparison_sheet,
+    _hydra_pixel_command,
     _image_metrics,
 )
 
@@ -48,6 +49,14 @@ def test_temporary_candidates_patch_only_copied_package(tmp_path: Path) -> None:
     _apply_patch(tmp_path, "fixed-canny")
     patched = perceive.read_text(encoding="utf-8")
     assert "canny = cv2.Canny(gray, 40, 120)" in patched
+
+
+def test_ab_experiments_run_with_debug_output(tmp_path: Path) -> None:
+    """A/B 指标依赖 05_palette / 22_palette_strip，命令必须显式开启 debug。"""
+    command = _hydra_pixel_command(
+        PIXEL_SOURCES[0], SIZES[0], tmp_path, EXPERIMENTS["ab-3"][0]
+    )
+    assert "debug=true" in command
 
 
 def test_image_metrics_and_sheet_include_alpha(tmp_path: Path) -> None:
