@@ -26,6 +26,9 @@ _RAMP_MINIMUM_FAMILY_PIXELS: Final = 8
 _RAMP_CHROMA_QUANTILE: Final = 0.5
 _RAMP_ENDPOINT_CHROMA_SCALE: Final = 0.78
 _RAMP_MAXIMUM_CHROMA: Final = 80.0
+# Canny 自适应阈值与 ascii 照片边缘策略一致（AB-3 结论，见 issue #1）。
+_CANNY_LOW_RATIO: Final = 0.33
+_CANNY_LOW_FLOOR: Final = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -390,26 +393,6 @@ def build_adaptive_ramps(
     return ramps_bgr.astype(np.float32), ramp_l
 
 
-def assign_lightness_tiers(
-    l_channel: np.ndarray,
-    family_labels: np.ndarray,
-    ramp_l: np.ndarray,
-    foreground: np.ndarray,
-) -> np.ndarray:
-    """把每个前景像素的明度就近量化到其色相族阶梯的某一档（tier）。
-
-    返回的 tiers：前景为 ``0 .. steps-1``，背景为 ``-1``。
-    """
-    tiers = np.full(l_channel.shape, -1, dtype=np.int16)
-    for group in range(len(ramp_l)):
-        mask = foreground & (family_labels == group)
-        if not mask.any():
-            continue
-        values = l_channel[mask, None]
-        tiers[mask] = np.argmin(np.abs(values - ramp_l[group][None, :]), axis=1)
-    return tiers
-
-
 def perceive(
     bgra: np.ndarray,
     denoise_d: int,
@@ -420,8 +403,6 @@ def perceive(
     chroma_floor: float,
     ramp_steps: int,
     ramp_minimum_span: float,
-    canny_low: int,
-    canny_high: int,
     alpha_threshold: int,
     palette_bgr: NDArray[np.uint8] | None,
     debug_dir: Path,
@@ -490,7 +471,6 @@ def perceive(
     )
     if palette_bgr is not None:
         ramps_bgr = fit_ramps_to_palette(ramps_bgr, palette_bgr)
-    tier = assign_lightness_tiers(l_smooth, family_labels, ramp_l, foreground)
     steps_per_family = np.full(len(hue_directions_ab), ramp_steps, dtype=np.int32)
 
     # families 可视化
@@ -518,32 +498,24 @@ def perceive(
     _save("05_palette", pal)
 
     # ── Canny 细节线（排除 alpha 轮廓边界带） ──
+    # 阈值采用 Otsu 自适应：low = max(Otsu × ratio, floor)，high = Otsu，
+    # 与 ascii 照片边缘策略一致（AB-3 结论）。Canny 输入仍用去噪灰度图。
     gray = cv2.cvtColor(denoised, cv2.COLOR_BGR2GRAY)
-    canny = cv2.Canny(gray, canny_low, canny_high)
+    otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    canny = cv2.Canny(
+        gray,
+        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
+        float(otsu),
+    )
     kernel = np.ones((3, 3), np.uint8)
     eroded = cv2.erode(foreground.astype(np.uint8), kernel).astype(bool)
     canny[~eroded] = 0
     _save("06_canny", canny)
 
-    # reconstructed
-    h, w = tier.shape
-    recon = np.zeros((h, w, 3), dtype=np.uint8)
-    for fi, steps in enumerate(steps_per_family):
-        mask = (family_labels == fi) & (tier >= 0)
-        if not mask.any():
-            continue
-        for si in range(steps):
-            recon[mask & (tier == si)] = ramps_u8[fi, si]
-    recon[canny > 0] = [0, 0, 0]
-    _save("07_reconstructed", recon)
-
+    # 调试用中间量（original / denoised / blocks / blocks_lab / tier）只在本
+    # 函数内部使用即弃，不进返回 dict；structure 阶段基于 L_down 自行重算 tier。
     return {
-        "original": bgr,
-        "denoised": denoised,
-        "blocks": blocks,
-        "blocks_lab": blocks_lab,
         "L": l_smooth,
-        "tier": tier,
         "family_labels": family_labels,
         "hue_directions_ab": hue_directions_ab,
         "ramps_bgr": ramps_bgr,

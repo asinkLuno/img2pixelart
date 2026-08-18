@@ -53,9 +53,11 @@ EXPERIMENTS: dict[str, tuple[Variant, Variant]] = {
         Variant("a-bilateral"),
         Variant("b-mean-shift-only", patch="skip-bilateral"),
     ),
+    # AB-3 结论已落地（#4）：perceive 默认即为 Otsu 自适应。
+    # A 侧用补丁回退到固定阈值，用于复验与对比。
     "ab-3": (
-        Variant("a-fixed-canny", ("perceive.canny_low=40", "perceive.canny_high=120")),
-        Variant("b-otsu-canny", patch="otsu-canny"),
+        Variant("a-fixed-canny", patch="fixed-canny"),
+        Variant("b-otsu-canny"),
     ),
 }
 
@@ -81,15 +83,15 @@ def _apply_patch(package_dir: Path, patch: str) -> None:
             "denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)",
             "denoised = bgr.copy()  # AB-2 temporary candidate: skip bilateral filtering",
         )
-    elif patch == "otsu-canny":
+    elif patch == "fixed-canny":
         _replace_once(
             perceive,
-            "canny = cv2.Canny(gray, canny_low, canny_high)",
-            """otsu, _ = cv2.threshold(
-        gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
-    # Match the current ASCII photo-edge policy: ratio × Otsu, with a floor.
-    canny = cv2.Canny(gray, max(float(otsu) * 0.33, 10.0), float(otsu))""",
+            """    canny = cv2.Canny(
+        gray,
+        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),
+        float(otsu),
+    )""",
+            "    canny = cv2.Canny(gray, 40, 120)  # AB-3 temporary candidate: fixed thresholds",
         )
     else:
         raise ValueError(f"unknown experimental patch: {patch}")

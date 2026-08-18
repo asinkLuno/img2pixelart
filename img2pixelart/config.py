@@ -18,8 +18,6 @@ class PerceiveConfig:
     chroma_floor: float
     ramp_steps: int
     ramp_minimum_span: float
-    canny_low: int
-    canny_high: int
 
 
 @dataclass
@@ -126,8 +124,6 @@ def validate_settings(cfg: DictConfig) -> None:
             "chroma_floor",
             "ramp_steps",
             "ramp_minimum_span",
-            "canny_low",
-            "canny_high",
         ],
     )
 
@@ -175,12 +171,6 @@ def validate_settings(cfg: DictConfig) -> None:
     if p.ramp_minimum_span < 0 or p.ramp_minimum_span > 100:
         errors.append(
             f"perceive.ramp_minimum_span={p.ramp_minimum_span} 必须位于 [0, 100]"
-        )
-    if p.canny_low < 0 or p.canny_high < 0:
-        errors.append("perceive canny 阈值必须 >= 0")
-    if p.canny_low > p.canny_high:
-        errors.append(
-            f"perceive canny_low={p.canny_low} 必须 <= canny_high={p.canny_high}"
         )
     if not 0 <= cfg.alpha_threshold <= 255:
         errors.append(f"alpha_threshold={cfg.alpha_threshold} 必须位于 [0, 255]")

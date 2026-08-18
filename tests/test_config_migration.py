@@ -23,6 +23,7 @@ LEGACY_ASCII_KEYS = (
     "bilateral_sigma_color",
     "bilateral_sigma_space",
 )
+LEGACY_PERCEIVE_KEYS = ("canny_low", "canny_high")
 
 
 def _compose() -> DictConfig:
@@ -36,6 +37,8 @@ def test_legacy_keys_are_gone() -> None:
         assert key not in cfg.render, key
     for key in LEGACY_ASCII_KEYS:
         assert key not in cfg.ascii, key
+    for key in LEGACY_PERCEIVE_KEYS:
+        assert key not in cfg.perceive, key
     assert "alpha_threshold" not in cfg.perceive
 
 

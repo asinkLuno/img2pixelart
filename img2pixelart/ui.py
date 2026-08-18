@@ -54,8 +54,6 @@ NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
     "perceive.chroma_floor": (0, 1_000_000),
     "perceive.ramp_steps": (3, 1_000_000),
     "perceive.ramp_minimum_span": (0, 100),
-    "perceive.canny_low": (0, 1_000_000),
-    "perceive.canny_high": (0, 1_000_000),
     "structure.alpha_coverage": (0.000001, 1),
     "structure.edge_coverage": (0, 1),
     "structure.edge_min_length": (1, 1_000_000),

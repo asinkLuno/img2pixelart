@@ -39,8 +39,6 @@ def run_pipeline(
         chroma_floor=p.chroma_floor,
         ramp_steps=p.ramp_steps,
         ramp_minimum_span=p.ramp_minimum_span,
-        canny_low=p.canny_low,
-        canny_high=p.canny_high,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=palette_bgr,
         debug_dir=debug_dir,
