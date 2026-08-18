@@ -49,15 +49,6 @@ class Variant:
 
 
 EXPERIMENTS: dict[str, tuple[Variant, Variant]] = {
-    "ab-1": (
-        Variant(
-            "a-bayer", ("render.dither_method=bayer", "render.pattern_style=ordered")
-        ),
-        Variant(
-            "b-pattern-ordered",
-            ("render.dither_method=pattern", "render.pattern_style=ordered"),
-        ),
-    ),
     "ab-2": (
         Variant("a-bilateral"),
         Variant("b-mean-shift-only", patch="skip-bilateral"),

@@ -21,15 +21,7 @@ def test_baseline_inputs_and_matrix_are_versioned() -> None:
 
 
 def test_experiments_cover_issue_candidates() -> None:
-    assert set(EXPERIMENTS) == {"ab-1", "ab-2", "ab-3"}
-    assert EXPERIMENTS["ab-1"][0].overrides == (
-        "render.dither_method=bayer",
-        "render.pattern_style=ordered",
-    )
-    assert EXPERIMENTS["ab-1"][1].overrides == (
-        "render.dither_method=pattern",
-        "render.pattern_style=ordered",
-    )
+    assert set(EXPERIMENTS) == {"ab-2", "ab-3"}
     assert EXPERIMENTS["ab-2"][1].patch == "skip-bilateral"
     assert EXPERIMENTS["ab-3"][1].patch == "otsu-canny"
 

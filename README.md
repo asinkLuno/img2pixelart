@@ -78,9 +78,9 @@ img2pixelart crop-padding docs/assets/banana_orig.png
 img2pixelart -m \
   img=docs/assets/banana_orig.png \
   perceive.ramp_steps=5,7,9 \
-  render.silhouette_dark_step=0,1,2 \
-  render.internal_outline_dark_steps=0,1,2 \
-  render.pattern_style=ordered,diagonal,clustered \
+  render.silhouette_darkness=0,0.5,1 \
+  render.internal_darkness=0,0.5,1 \
+  render.dither_style=ordered,diagonal,clustered \
   width=96 height=96
 ```
 
@@ -92,9 +92,9 @@ img2pixelart -m \
 img2pixelart -m \
   img=docs/assets/banana_orig.png \
   perceive.ramp_steps=5,7,9 \
-  render.silhouette_dark_step=0,1,2 \
-  render.internal_outline_dark_steps=0,1,2 \
-  render.pattern_style=ordered,diagonal,clustered \
+  render.silhouette_darkness=0,0.5,1 \
+  render.internal_darkness=0,0.5,1 \
+  render.dither_style=ordered,diagonal,clustered \
   width=96 height=96 \
   hydra/launcher=joblib \
   hydra.launcher.n_jobs=-1
@@ -114,17 +114,17 @@ Issue [#1](https://github.com/asinkLuno/img2pixelart/issues/1) 的基准由受�
 uv run python tools/visual_regression.py baseline
 
 # 每个命令生成 A/B 的 result.png、调试 palette、comparison.png 和 metrics.json
-uv run python tools/visual_regression.py ab-1  # bayer vs pattern/ordered
 uv run python tools/visual_regression.py ab-2  # bilateral → mean-shift vs mean-shift only
 uv run python tools/visual_regression.py ab-3  # fixed Canny vs ratio×Otsu Canny
 ```
 
-P2 的 B 侧在临时包副本中应用严格的实验补丁，不修改工作树；若目标实现移动，补丁会
-显式失败而不是悄悄比较了错误的算法。评审时打开 `comparison.png`，再读取
-`metrics.json` 的逐像素差异比例、平均通道差异和 `05_palette` /
-`22_palette_strip` 一致性。数值用于定位差异，结论仍以 **B 相对 A 没有可感知质量
-回退** 的人工评审为准；将 `AB-N: 结论 / 倾向 / 证据（输出路径或贴图）` 作为 issue
-评论。ASCII 矩阵是基线覆盖，当前三个 AB 仅比较像素画流水线。
+AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并（bayer 并入
+`ordered`），实验随其归档，不再包含在 runner 中。其余 B 侧在临时包副本中应用严格
+的实验补丁，不修改工作树；若目标实现移动，补丁会显式失败而不是悄悄比较了错误的算法。
+评审时打开 `comparison.png`，再读取 `metrics.json` 的逐像素差异比例、平均通道差异和
+`05_palette` / `22_palette_strip` 一致性。数值用于定位差异，结论仍以 **B 相对 A 没有
+可感知质量回退** 的人工评审为准；将 `AB-N: 结论 / 倾向 / 证据（输出路径或贴图）`
+作为 issue 评论。ASCII 矩阵是基线覆盖，当前 AB 仅比较像素画流水线。
 
 ## 关键参数
 
@@ -132,14 +132,28 @@ P2 的 B 侧在临时包副本中应用严格的实验补丁，不修改工作�
 |---|---|---|
 | `width` | 输出宽度 | 64 |
 | `height` | 输出高度 | 64 |
+| `alpha_threshold` | alpha ≥ 此值视为前景（像素画与 ASCII 共用） | 128 |
 | `perceive.ramp_steps` | 每色相的明度阶梯数 | 7 |
 | `perceive.requested_groups` | 色相族数量 | 3 |
-| `render.pattern_style` | 抖动风格：`ordered` / `diagonal` / `clustered` | ordered |
-| `render.silhouette_dark_step` | 外轮廓暗化级数（0=无） | 0 |
-| `render.silhouette_dark_scale` | 外轮廓亮度缩放（越小越深） | 0.75 |
-| `render.internal_outline_dark_steps` | 内部描边暗化级数（0=无） | 2 |
-| `render.internal_outline_dark_scale` | 内部描边亮度缩放（越小越深） | 0.6 |
-| `render.dither_fraction_min` | 抖动区域下限 | 0.18 |
-| `render.dither_fraction_max` | 抖动区域上限 | 0.82 |
+| `render.dither_style` | 抖动风格：`none` / `ordered` / `diagonal` / `clustered` / `floyd_steinberg` | ordered |
+| `render.silhouette_darkness` | 外轮廓暗化强度 0–1（0=无） | 1.0 |
+| `render.internal_darkness` | 内部描边暗化强度 0–1（0=无） | 1.0 |
+| `ascii.subject_coverage` | ASCII 字符格前景覆盖率阈值 | 0.5 |
+| `ascii.denoise_strength` | ASCII 照片边缘去噪强度（1.0 为默认） | 1.0 |
 
 完整参数见 `img2pixelart/conf/` 目录下各阶段 YAML 文件。
+
+## 参数迁移表（v0.x → 当前）
+
+| 旧参数 | 新参数 / 等效值 |
+|---|---|
+| `render.dither_method=bayer` | `render.dither_style=ordered` |
+| `render.dither_method=pattern` | `render.dither_style=ordered`（原 pattern_style=ordered） |
+| `render.pattern_style` | 并入 `render.dither_style`（ordered / diagonal / clustered） |
+| `render.dither_fraction_min/max` | 固定为 `[0.18, 0.82]`（内部常量） |
+| `render.dither_gradient_min` | 固定为 `0.8`（内部常量） |
+| `render.silhouette_dark_step` + `silhouette_dark_scale` | `render.silhouette_darkness`（默认 1.0 = 原 step=0, scale=0.75） |
+| `render.internal_outline_dark_steps` + `internal_outline_dark_scale` | `render.internal_darkness`（默认 1.0 = 原 steps=2, scale=0.6） |
+| `perceive.alpha_threshold` / `ascii.alpha_threshold` | 顶层 `alpha_threshold` |
+| `ascii.alpha_coverage` | `ascii.subject_coverage` |
+| `ascii.bilateral_d` / `bilateral_sigma_color` / `bilateral_sigma_space` | `ascii.denoise_strength`（默认 1.0 = 原 9 / 75 / 75） |

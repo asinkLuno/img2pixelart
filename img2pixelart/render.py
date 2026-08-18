@@ -1,9 +1,7 @@
-"""渲染阶段：按 (色相族, 明度档) 取色渲染，仅在合适处抖动，叠加同色相轮廓。
-
-所有可配置参数由 Hydra 配置显式传入，本模块不设代码默认值。
-"""
+"""渲染阶段：按 (色相族, 明度档) 取色渲染，仅在合适处抖动，叠加同色相轮廓。"""
 
 from pathlib import Path
+from typing import Final
 
 import cv2
 import numpy as np
@@ -12,6 +10,15 @@ from numpy.typing import NDArray
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
+
+# 抖动区域与梯度阈值：算法细节，固化。
+_DITHER_FRACTION_MIN: Final = 0.18
+_DITHER_FRACTION_MAX: Final = 0.82
+_DITHER_GRADIENT_MIN: Final = 0.8
+# 轮廓暗化强度映射曲线系数（见 render 的 darkness 参数说明）。
+_SILHOUETTE_SCALE_COEFF: Final = 0.25
+_INTERNAL_STEPS_MAX: Final = 2
+_INTERNAL_SCALE_COEFF: Final = 0.4
 
 # 4x4 Bayer 有序抖动阈值矩阵（已归一化到 [0,1)）。
 BAYER_4X4: FloatArray = (
@@ -174,31 +181,6 @@ def make_palette_strip(
 # ---------------------------------------------------------------------------
 
 
-def _render_bayer(
-    positions: FloatArray,
-    families: LabelArray,
-    ramps: FloatArray,
-    mask: BoolArray,
-    steps_per_family: NDArray[np.int32],
-) -> tuple[FloatArray, LabelArray]:
-    """Bayer 有序抖动：用 4x4 阈值矩阵在相邻两档之间按小数部分选档。"""
-    h, w = positions.shape
-    safe_family = np.maximum(families, 0)
-    max_tier = np.maximum(steps_per_family[safe_family] - 1, 0)
-    low = np.floor(positions).astype(np.int16)
-    low = np.minimum(low, max_tier)
-    high = np.minimum(low + 1, max_tier)
-    fraction = positions - low
-    tiled = np.tile(BAYER_4X4, (h // 4 + 1, w // 4 + 1))[:h, :w]
-    chosen = np.where(tiled < fraction, high, low).astype(np.int16)
-    chosen[~mask] = np.minimum(
-        np.rint(positions[~mask]).astype(np.int16),
-        max_tier[~mask],
-    )
-    bgr = ramps[safe_family, chosen]
-    return bgr.astype(np.float32), chosen
-
-
 def _render_floyd(
     positions: FloatArray,
     families: LabelArray,
@@ -293,20 +275,19 @@ def render(
     perceived: dict,
     struct: dict,
     *,
-    dither_method: str,
-    pattern_style: str,
-    dither_fraction_min: float,
-    dither_fraction_max: float,
-    dither_gradient_min: float,
-    silhouette_dark_step: int,
-    silhouette_dark_scale: float,
-    internal_outline_dark_steps: int,
-    internal_outline_dark_scale: float,
+    dither_style: str,
+    silhouette_darkness: float,
+    internal_darkness: float,
     steps_per_family: NDArray[np.int32],
     debug_dir: Path,
 ) -> tuple[np.ndarray, dict]:
     """阶段 C：按 (色相族, 明度档) 取色渲染，叠加同色相轮廓。
 
+    dither_style: none | ordered | diagonal | clustered | floyd_steinberg。
+    silhouette_darkness / internal_darkness 取值 [0, 1]，0 关闭；
+    默认 1.0 复现原轮廓暗化的档位与缩放：
+      - silhouette：档位固定最暗档，scale = 1 - 0.25 × strength；
+      - internal：steps = round(2 × strength)，scale = 1 - 0.4 × strength。
     perceived 为 :func:`perceive` 的输出字典。
     struct 为 :func:`structure` 的输出字典。
     steps_per_family 为各族原生长度，支持变长 ramp。
@@ -343,52 +324,49 @@ def render(
         valid
         & ~struct["outline"]
         & ~struct["shade_boundary"]
-        & (fraction >= dither_fraction_min)
-        & (fraction <= dither_fraction_max)
-        & (gradient >= dither_gradient_min)
+        & (fraction >= _DITHER_FRACTION_MIN)
+        & (fraction <= _DITHER_FRACTION_MAX)
+        & (gradient >= _DITHER_GRADIENT_MIN)
     )
 
-    if dither_method == "pattern":
-        pattern_set = PATTERNS[pattern_style]
+    if dither_style in PATTERNS:
+        pattern_set = PATTERNS[dither_style]
         dithered_bgr, rendered_steps = _render_pattern(
             position, families, ramps, dither_mask, pattern_set, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
-    elif dither_method == "bayer":
-        dithered_bgr, rendered_steps = _render_bayer(
-            position, families, ramps, dither_mask, steps_per_family
-        )
-        final_bgr = hard_bgr.copy()
-        final_bgr[dither_mask] = dithered_bgr[dither_mask]
-    elif dither_method == "floyd_steinberg":
+    elif dither_style == "floyd_steinberg":
         dithered_bgr, rendered_steps = _render_floyd(
             position, families, ramps, dither_mask, steps_per_family
         )
         final_bgr = hard_bgr.copy()
         final_bgr[dither_mask] = dithered_bgr[dither_mask]
-    elif dither_method == "none":
+    elif dither_style == "none":
         dithered_bgr = hard_bgr.copy()
         rendered_steps = hard_tiers.copy()
         final_bgr = hard_bgr.copy()
         dither_mask[:] = False
     else:
-        raise ValueError(f"unknown dither method: {dither_method!r}")
+        raise ValueError(f"unknown dither style: {dither_style!r}")
 
-    # 轮廓像素统一压到该色相族的最暗档（同族变暗）
-    for y, x in np.argwhere(struct["silhouette"]):
-        family = families[y, x]
-        if family >= 0:
-            step = min(silhouette_dark_step, int(steps_per_family[family]) - 1)
-            final_bgr[y, x] = ramps[family, max(step, 0)] * silhouette_dark_scale
+    # 轮廓像素统一压到该色相族的最暗档（同族变暗）；strength=0 时关闭
+    if silhouette_darkness > 0:
+        silhouette_scale = 1.0 - _SILHOUETTE_SCALE_COEFF * silhouette_darkness
+        for y, x in np.argwhere(struct["silhouette"]):
+            family = families[y, x]
+            if family >= 0:
+                final_bgr[y, x] = ramps[family, 0] * silhouette_scale
 
-    # 内部细节线比所在像素的档位再暗 internal_delta 档
-    internal_delta = internal_outline_dark_steps
-    for y, x in np.argwhere(struct["internal_detail"]):
-        family = families[y, x]
-        if family >= 0:
-            step = max(0, int(hard_tiers[y, x]) - internal_delta)
-            final_bgr[y, x] = ramps[family, step] * internal_outline_dark_scale
+    # 内部细节线比所在像素的档位再暗 internal_delta 档；strength=0 时关闭
+    if internal_darkness > 0:
+        internal_delta = round(_INTERNAL_STEPS_MAX * internal_darkness)
+        internal_scale = 1.0 - _INTERNAL_SCALE_COEFF * internal_darkness
+        for y, x in np.argwhere(struct["internal_detail"]):
+            family = families[y, x]
+            if family >= 0:
+                step = max(0, int(hard_tiers[y, x]) - internal_delta)
+                final_bgr[y, x] = ramps[family, step] * internal_scale
 
     final_bgr[~valid] = 0
     final_u8 = np.clip(final_bgr, 0, 255).astype(np.uint8)

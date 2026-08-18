@@ -41,7 +41,7 @@ def run_pipeline(
         ramp_minimum_span=p.ramp_minimum_span,
         canny_low=p.canny_low,
         canny_high=p.canny_high,
-        alpha_threshold=p.alpha_threshold,
+        alpha_threshold=cfg.alpha_threshold,
         palette_bgr=palette_bgr,
         debug_dir=debug_dir,
     )
@@ -83,15 +83,9 @@ def run_pipeline(
     final_bgr, _meta = render(
         perceived,
         struct,
-        dither_method=r.dither_method,
-        pattern_style=r.pattern_style,
-        dither_fraction_min=r.dither_fraction_min,
-        dither_fraction_max=r.dither_fraction_max,
-        dither_gradient_min=r.dither_gradient_min,
-        silhouette_dark_step=r.silhouette_dark_step,
-        silhouette_dark_scale=r.silhouette_dark_scale,
-        internal_outline_dark_steps=r.internal_outline_dark_steps,
-        internal_outline_dark_scale=r.internal_outline_dark_scale,
+        dither_style=r.dither_style,
+        silhouette_darkness=r.silhouette_darkness,
+        internal_darkness=r.internal_darkness,
         steps_per_family=steps_per_family,
         debug_dir=debug_dir,
     )
@@ -147,7 +141,7 @@ def _hydra_main(cfg: DictConfig) -> None:
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def _ascii_main(cfg: DictConfig) -> None:
     """将图片转换为 ASCII 字符画（Hydra pipeline）。"""
-    validate_ascii(cfg.ascii)
+    validate_ascii(cfg)
 
     img_path = Path(hydra.utils.to_absolute_path(cfg.img))
     bgra = cv2.imread(str(img_path), cv2.IMREAD_UNCHANGED)
@@ -161,12 +155,10 @@ def _ascii_main(cfg: DictConfig) -> None:
     lines = generate_ascii_art(
         bgra,
         rows=a.rows,
-        alpha_threshold=a.alpha_threshold,
-        alpha_coverage=a.alpha_coverage,
+        alpha_threshold=cfg.alpha_threshold,
+        subject_coverage=a.subject_coverage,
         line_art_white_ratio=a.line_art_white_ratio,
-        bilateral_d=a.bilateral_d,
-        bilateral_sigma_color=a.bilateral_sigma_color,
-        bilateral_sigma_space=a.bilateral_sigma_space,
+        denoise_strength=a.denoise_strength,
         canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
         debug_dir=Path.cwd(),

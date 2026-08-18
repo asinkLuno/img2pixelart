@@ -72,9 +72,7 @@ def _photo_edges(
     foreground: np.ndarray,
     target_h: int,
     target_w: int,
-    bilateral_d: int,
-    bilateral_sigma_color: float,
-    bilateral_sigma_space: float,
+    denoise_strength: float,
     canny_low_ratio: float,
 ) -> np.ndarray:
     """照片边缘：亮度 Canny 与 Lab 色彩梯度合并后细化。
@@ -84,7 +82,7 @@ def _photo_edges(
     不会把透明背景或整张图的低频变化当作细节。
     """
     smooth = cv2.bilateralFilter(
-        bgr, bilateral_d, bilateral_sigma_color, bilateral_sigma_space
+        bgr, 9, 75.0 * denoise_strength, 75.0 * denoise_strength
     )
     gray = cv2.cvtColor(smooth, cv2.COLOR_BGR2GRAY)
     otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -291,11 +289,9 @@ def generate_ascii_art(
     *,
     rows: int,
     alpha_threshold: int,
-    alpha_coverage: float,
+    subject_coverage: float,
     line_art_white_ratio: float,
-    bilateral_d: int,
-    bilateral_sigma_color: float,
-    bilateral_sigma_space: float,
+    denoise_strength: float,
     canny_low_ratio: float,
     merge_max_gap: int,
     debug_dir: Path,
@@ -353,9 +349,7 @@ def generate_ascii_art(
             foreground,
             grid_h,
             grid_w,
-            bilateral_d,
-            bilateral_sigma_color,
-            bilateral_sigma_space,
+            denoise_strength,
             canny_low_ratio,
         )
     _save("ascii_edges", edges)
@@ -386,7 +380,7 @@ def generate_ascii_art(
 
     # ── 主体遮罩：遮罩外字符格置空 ──
     if not foreground.all():
-        subject = down_mask(foreground, grid_cols, grid_rows, alpha_coverage)
+        subject = down_mask(foreground, grid_cols, grid_rows, subject_coverage)
         for r in range(grid_rows):
             if subject[r].all():
                 continue
