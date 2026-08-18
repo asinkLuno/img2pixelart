@@ -80,8 +80,10 @@ def _apply_patch(package_dir: Path, patch: str) -> None:
     if patch == "skip-bilateral":
         _replace_once(
             perceive,
-            "denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)",
-            "denoised = bgr.copy()  # AB-2 temporary candidate: skip bilateral filtering",
+            """    denoised = cv2.bilateralFilter(
+        bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA
+    )""",
+            "    denoised = bgr.copy()  # AB-2 temporary candidate: skip bilateral filtering",
         )
     elif patch == "fixed-canny":
         _replace_once(

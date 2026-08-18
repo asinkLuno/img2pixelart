@@ -146,16 +146,19 @@ AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并
 | `width` | 输出宽度 | 64 |
 | `height` | 输出高度 | 64 |
 | `alpha_threshold` | alpha ≥ 此值视为前景（像素画与 ASCII 共用） | 128 |
+| `debug` | 调试输出开关：`true` 时各阶段中间 PNG 写入输出目录 | false |
+| `perceive.mean_shift_sp` / `mean_shift_sr` | Mean Shift 色块空间 / 颜色带宽 | 8 / 25 |
 | `perceive.ramp_steps` | 每色相的明度阶梯数 | 7 |
 | `perceive.requested_groups` | 色相族数量 | 3 |
-| `debug` | 调试输出开关：`true` 时各阶段中间 PNG 写入输出目录 | false |
 | `render.dither_style` | 抖动风格：`none` / `ordered` / `diagonal` / `clustered` / `floyd_steinberg` | ordered |
 | `render.silhouette_darkness` | 外轮廓暗化强度 0–1（0=无） | 1.0 |
 | `render.internal_darkness` | 内部描边暗化强度 0–1（0=无） | 1.0 |
 | `ascii.subject_coverage` | ASCII 字符格前景覆盖率阈值 | 0.5 |
 | `ascii.denoise_strength` | ASCII 照片边缘去噪强度（1.0 为默认） | 1.0 |
 
-完整参数见 `img2pixelart/conf/` 目录下各阶段 YAML 文件。
+完整参数清单（25 项，含 structure 8 项与 ascii 其余参数）见
+[docs/参数总表.md](docs/%E5%8F%82%E6%95%B0%E6%80%BB%E8%A1%A8.md)，与 `img2pixelart/conf/`
+下各阶段 YAML 一一对应。
 
 ## 参数迁移表（v0.x → 当前）
 
@@ -170,5 +173,9 @@ AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并
 | `render.internal_outline_dark_steps` + `internal_outline_dark_scale` | `render.internal_darkness`（默认 1.0 = 原 steps=2, scale=0.6） |
 | `perceive.alpha_threshold` / `ascii.alpha_threshold` | 顶层 `alpha_threshold` |
 | `perceive.canny_low` / `perceive.canny_high` | Otsu 自适应（内部常量 `max(Otsu×0.33, 10)` / `Otsu`，与 ascii 策略一致） |
+| `perceive.denoise_d` / `perceive.denoise_sigma` | 内部常量 5 / 35（bilateral 保留，AB-2 结论） |
+| `perceive.chroma_floor` | 内部常量 5.0 |
+| `perceive.ramp_minimum_span` | 内部常量 42.0 |
+| `ascii.canny_low_ratio` | 内部常量 0.33（与 perceive Canny 策略一致） |
 | `ascii.alpha_coverage` | `ascii.subject_coverage` |
 | `ascii.bilateral_d` / `bilateral_sigma_color` / `bilateral_sigma_space` | `ascii.denoise_strength`（默认 1.0 = 原 9 / 75 / 75） |

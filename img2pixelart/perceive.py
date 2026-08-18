@@ -29,6 +29,11 @@ _RAMP_MAXIMUM_CHROMA: Final = 80.0
 # Canny 自适应阈值与 ascii 照片边缘策略一致（AB-3 结论，见 issue #1）。
 _CANNY_LOW_RATIO: Final = 0.33
 _CANNY_LOW_FLOOR: Final = 10.0
+# 去噪 / 分块 / 聚类 / 阶梯的内部常量（#7 最终参数面：这些量不再对外暴露）。
+_BILATERAL_D: Final = 5
+_BILATERAL_SIGMA: Final = 35.0
+_CHROMA_FLOOR: Final = 5.0
+_RAMP_MINIMUM_SPAN: Final = 42.0
 
 
 # ---------------------------------------------------------------------------
@@ -395,14 +400,10 @@ def build_adaptive_ramps(
 
 def perceive(
     bgra: np.ndarray,
-    denoise_d: int,
-    denoise_sigma: float,
     mean_shift_sp: float,
     mean_shift_sr: float,
     requested_groups: int,
-    chroma_floor: float,
     ramp_steps: int,
-    ramp_minimum_span: float,
     alpha_threshold: int,
     palette_bgr: NDArray[np.uint8] | None,
     debug: bool,
@@ -410,7 +411,9 @@ def perceive(
 ):
     """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
 
-    用户可调参数由 Hydra 配置显式传入。
+    用户可调参数由 Hydra 配置显式传入（#7 最终参数面：mean_shift_sp /
+    mean_shift_sr / requested_groups / ramp_steps）；双边滤波、色度下限与
+    明度跨度等算法内部量为模块常量。
     debug 为 False 时跳过调试 PNG 写入；debug_dir 语义不变（定位输出目录）。
     """
 
@@ -446,7 +449,9 @@ def perceive(
         alpha_full = np.full(bgr.shape[:2], 255, dtype=np.uint8)
 
     # ── 去噪 + 色块化 ──
-    denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)
+    denoised = cv2.bilateralFilter(
+        bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA
+    )
     _save("01_original", bgr)
     _save("02_denoised", denoised)
 
@@ -462,7 +467,7 @@ def perceive(
         blocks_lab,
         foreground,
         requested_groups=requested_groups,
-        chroma_floor=chroma_floor,
+        chroma_floor=_CHROMA_FLOOR,
     )
     ramps_bgr, ramp_l = build_adaptive_ramps(
         lab=blocks_lab,
@@ -470,7 +475,7 @@ def perceive(
         family_labels=family_labels,
         hue_directions_ab=hue_directions_ab,
         steps=ramp_steps,
-        minimum_span=ramp_minimum_span,
+        minimum_span=_RAMP_MINIMUM_SPAN,
     )
     if palette_bgr is not None:
         ramps_bgr = fit_ramps_to_palette(ramps_bgr, palette_bgr)

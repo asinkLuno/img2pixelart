@@ -32,8 +32,9 @@ def test_experiments_cover_issue_candidates() -> None:
 def test_temporary_candidates_patch_only_copied_package(tmp_path: Path) -> None:
     perceive = tmp_path / "perceive.py"
     original = (
-        "    denoised = cv2.bilateralFilter("
-        "bgr, denoise_d, denoise_sigma, denoise_sigma)\n"
+        "    denoised = cv2.bilateralFilter(\n"
+        "        bgr, _BILATERAL_D, _BILATERAL_SIGMA, _BILATERAL_SIGMA\n"
+        "    )\n"
         "    canny = cv2.Canny(\n"
         "        gray,\n"
         "        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),\n"

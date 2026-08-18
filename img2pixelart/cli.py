@@ -33,14 +33,10 @@ def run_pipeline(
 
     perceived = perceive(
         bgra,
-        denoise_d=p.denoise_d,
-        denoise_sigma=p.denoise_sigma,
         mean_shift_sp=p.mean_shift_sp,
         mean_shift_sr=p.mean_shift_sr,
         requested_groups=p.requested_groups,
-        chroma_floor=p.chroma_floor,
         ramp_steps=p.ramp_steps,
-        ramp_minimum_span=p.ramp_minimum_span,
         alpha_threshold=cfg.alpha_threshold,
         palette_bgr=palette_bgr,
         debug=debug,
@@ -162,7 +158,6 @@ def _ascii_main(cfg: DictConfig) -> None:
         subject_coverage=a.subject_coverage,
         line_art_white_ratio=a.line_art_white_ratio,
         denoise_strength=a.denoise_strength,
-        canny_low_ratio=a.canny_low_ratio,
         merge_max_gap=a.merge_max_gap,
         debug=bool(cfg.debug),
         debug_dir=Path.cwd(),

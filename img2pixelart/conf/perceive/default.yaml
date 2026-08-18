@@ -1,10 +1,6 @@
-# perceive 阶段（去噪 / 均值漂移分块 / 色相族聚类 / 明度阶梯）参数
-# 可用命令行覆盖，如 --setting perceive.denoise_d=5
-denoise_d: 5
-denoise_sigma: 35
+# perceive 阶段（均值漂移分块 / 色相族聚类 / 明度阶梯）参数
+# 双边滤波、色度下限与明度跨度等算法内部量已固化为模块常量（#7 最终参数面）
 mean_shift_sp: 8
 mean_shift_sr: 25
 requested_groups: 3
-chroma_floor: 5.0
 ramp_steps: 7
-ramp_minimum_span: 42.0

@@ -6,8 +6,7 @@ subject_coverage: 0.5
 # 线条画判定的亮背景占比
 line_art_white_ratio: 0.5
 # 照片边缘：双边滤波强度；1.0 复现默认参数
+# Canny 低阈值 = Otsu × 0.33（内部常量，与 perceive 一致）；高阈值 = Otsu
 denoise_strength: 1.0
-# Canny 低阈值 = Otsu * canny_low_ratio；高阈值 = Otsu
-canny_low_ratio: 0.33
 # 线段合并：同方向字符间允许填补的最大空格数
 merge_max_gap: 2
