@@ -1,9 +1,7 @@
-"""感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 边缘。
-
-所有可配置参数由 Hydra 配置显式传入，本模块不设代码默认值。
-"""
+"""感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 边缘。"""
 
 from pathlib import Path
+from typing import Final
 
 import cv2
 import numpy as np
@@ -14,6 +12,20 @@ from .fit import fit_ramps_to_palette
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
+
+# 确定性是流水线要求，勿参数化。
+_RANDOM_SEED: Final = 11
+_SPHERICAL_KMEANS_ITERATIONS: Final = 20
+_MINIMUM_FIT_PIXELS: Final = 16
+_MAXIMUM_FIT_PIXELS: Final = 30_000
+_MERGE_ANGLE_DEGREES: Final = 10.0
+_MINIMUM_LIGHTNESS: Final = 8.0
+_RAMP_LOW_QUANTILE: Final = 0.04
+_RAMP_HIGH_QUANTILE: Final = 0.96
+_RAMP_MINIMUM_FAMILY_PIXELS: Final = 8
+_RAMP_CHROMA_QUANTILE: Final = 0.5
+_RAMP_ENDPOINT_CHROMA_SCALE: Final = 0.78
+_RAMP_MAXIMUM_CHROMA: Final = 80.0
 
 
 # ---------------------------------------------------------------------------
@@ -77,8 +89,6 @@ def _assign_nearest_hue(
 def spherical_kmeans_2d(
     directions: FloatArray,
     cluster_count: int,
-    iterations: int,
-    random_seed: int,
 ) -> tuple[LabelArray, FloatArray]:
     """在单位圆上对二维方向向量做 spherical K-Means 聚类。
 
@@ -90,12 +100,12 @@ def spherical_kmeans_2d(
         raise ValueError("cluster_count 必须位于 [1, N]")
 
     directions = _normalize_vectors(np.asarray(directions, dtype=np.float32))
-    rng = np.random.default_rng(random_seed)
+    rng = np.random.default_rng(_RANDOM_SEED)
     initial_indices = rng.choice(len(directions), size=cluster_count, replace=False)
     centers = directions[initial_indices].copy()
     labels = np.full(len(directions), -1, dtype=np.int16)
 
-    for _ in range(iterations):
+    for _ in range(_SPHERICAL_KMEANS_ITERATIONS):
         similarities = directions @ centers.T
         new_labels = np.argmax(similarities, axis=1).astype(np.int16)
 
@@ -135,12 +145,6 @@ def cluster_hue_families(
     foreground: BoolArray,
     requested_groups: int,
     chroma_floor: float,
-    merge_angle_degrees: float,
-    minimum_lightness: float,
-    minimum_fit_pixels: int,
-    maximum_fit_pixels: int,
-    random_seed: int,
-    spherical_kmeans_iterations: int,
 ):
     """按色相角将前景像素聚成色相族，低色度像素归入中性族。
 
@@ -166,16 +170,16 @@ def cluster_hue_families(
 
     # ── 彩色像素聚类 ──
     chromatic_fit = (visible_chroma >= chroma_floor) & (
-        visible_lab[:, 0] >= minimum_lightness
+        visible_lab[:, 0] >= _MINIMUM_LIGHTNESS
     )
     fit_ab = visible_ab[chromatic_fit]
 
     chromatic_centers: FloatArray | None = None
 
-    if len(fit_ab) >= minimum_fit_pixels:
-        if len(fit_ab) > maximum_fit_pixels:
-            rng = np.random.default_rng(random_seed)
-            indices = rng.choice(len(fit_ab), size=maximum_fit_pixels, replace=False)
+    if len(fit_ab) >= _MINIMUM_FIT_PIXELS:
+        if len(fit_ab) > _MAXIMUM_FIT_PIXELS:
+            rng = np.random.default_rng(_RANDOM_SEED)
+            indices = rng.choice(len(fit_ab), size=_MAXIMUM_FIT_PIXELS, replace=False)
             fit_ab = fit_ab[indices]
 
         fit_directions = _normalize_vectors(fit_ab)
@@ -189,13 +193,11 @@ def cluster_hue_families(
             _, centers = spherical_kmeans_2d(
                 fit_directions,
                 cluster_count=cluster_count,
-                iterations=spherical_kmeans_iterations,
-                random_seed=random_seed,
             )
             chromatic_centers = centers
             chromatic_centers = _merge_hue_centers(
                 chromatic_centers,
-                angular_threshold_degrees=merge_angle_degrees,
+                angular_threshold_degrees=_MERGE_ANGLE_DEGREES,
             )
 
     # ── 建立完整色相方向表：彩色族 + 中性族 ──
@@ -266,12 +268,6 @@ def build_adaptive_ramps(
     hue_directions_ab: FloatArray,
     steps: int,
     minimum_span: float,
-    low_quantile: float,
-    high_quantile: float,
-    minimum_family_pixels: int,
-    chroma_quantile: float,
-    endpoint_chroma_scale: float,
-    maximum_chroma: float,
 ) -> tuple[FloatArray, FloatArray]:
     """为每个色相族（含中性族）构建明度阶梯色板。
 
@@ -304,21 +300,6 @@ def build_adaptive_ramps(
     if minimum_span < 0.0 or minimum_span > 100.0:
         raise ValueError("minimum_span 必须位于 [0, 100]")
 
-    if not 0.0 <= low_quantile < high_quantile <= 1.0:
-        raise ValueError("必须满足 0 <= low_quantile < high_quantile <= 1")
-
-    if minimum_family_pixels < 1:
-        raise ValueError("minimum_family_pixels 必须至少为 1")
-
-    if not 0.0 <= chroma_quantile <= 1.0:
-        raise ValueError("chroma_quantile 必须位于 [0, 1]")
-
-    if not 0.0 <= endpoint_chroma_scale <= 1.0:
-        raise ValueError("endpoint_chroma_scale 必须位于 [0, 1]")
-
-    if maximum_chroma <= 0.0:
-        raise ValueError("maximum_chroma 必须大于 0")
-
     family_count = len(hue_directions_ab)
     if family_count == 0:
         return (
@@ -337,15 +318,15 @@ def build_adaptive_ramps(
 
     all_chroma = np.linalg.norm(foreground_lab[:, 1:3], axis=1)
 
-    global_chroma = float(np.quantile(all_chroma, chroma_quantile))
-    global_chroma = min(global_chroma, maximum_chroma)
+    global_chroma = float(np.quantile(all_chroma, _RAMP_CHROMA_QUANTILE))
+    global_chroma = min(global_chroma, _RAMP_MAXIMUM_CHROMA)
 
     # 中间档保持原色度，两端平滑衰减到 endpoint_chroma_scale。
     # ponytail: 偶数 steps 时没有恰好为 1.0 的中间档，只有奇数 steps 才精确。
     positions = np.linspace(-1.0, 1.0, steps, dtype=np.float32)
-    chroma_scale = (1.0 - (1.0 - endpoint_chroma_scale) * np.abs(positions)).astype(
-        np.float32
-    )
+    chroma_scale = (
+        1.0 - (1.0 - _RAMP_ENDPOINT_CHROMA_SCALE) * np.abs(positions)
+    ).astype(np.float32)
 
     ramp_labs = np.empty((family_count, steps, 3), dtype=np.float32)
     ramp_l = np.empty((family_count, steps), dtype=np.float32)
@@ -354,15 +335,15 @@ def build_adaptive_ramps(
         family_mask = foreground_labels == family_index
         family_lab = foreground_lab[family_mask]
 
-        if len(family_lab) >= minimum_family_pixels:
+        if len(family_lab) >= _RAMP_MINIMUM_FAMILY_PIXELS:
             source_lab = family_lab
         else:
             source_lab = foreground_lab
 
         lightness = source_lab[:, 0]
 
-        low = float(np.quantile(lightness, low_quantile))
-        high = float(np.quantile(lightness, high_quantile))
+        low = float(np.quantile(lightness, _RAMP_LOW_QUANTILE))
+        high = float(np.quantile(lightness, _RAMP_HIGH_QUANTILE))
         center_l = float(np.median(lightness))
 
         low, high = _enforce_span(
@@ -385,13 +366,13 @@ def build_adaptive_ramps(
         else:
             direction = direction / direction_norm
 
-            if len(family_lab) >= minimum_family_pixels:
+            if len(family_lab) >= _RAMP_MINIMUM_FAMILY_PIXELS:
                 family_chroma = np.linalg.norm(family_lab[:, 1:3], axis=1)
-                base_chroma = float(np.quantile(family_chroma, chroma_quantile))
+                base_chroma = float(np.quantile(family_chroma, _RAMP_CHROMA_QUANTILE))
             else:
                 base_chroma = global_chroma
 
-            base_chroma = min(base_chroma, maximum_chroma)
+            base_chroma = min(base_chroma, _RAMP_MAXIMUM_CHROMA)
 
         ramp_chroma = base_chroma * chroma_scale
 
@@ -437,20 +418,8 @@ def perceive(
     mean_shift_sr: float,
     requested_groups: int,
     chroma_floor: float,
-    merge_angle_degrees: float,
-    minimum_lightness: float,
-    minimum_fit_pixels: int,
-    maximum_fit_pixels: int,
-    random_seed: int,
-    spherical_kmeans_iterations: int,
     ramp_steps: int,
     ramp_minimum_span: float,
-    ramp_low_quantile: float,
-    ramp_high_quantile: float,
-    ramp_minimum_family_pixels: int,
-    ramp_chroma_quantile: float,
-    ramp_endpoint_chroma_scale: float,
-    ramp_maximum_chroma: float,
     canny_low: int,
     canny_high: int,
     alpha_threshold: int,
@@ -459,7 +428,7 @@ def perceive(
 ):
     """感知阶段：去噪 → 色块化 → 色相族聚类 → 明度阶梯 → Canny 细节线。
 
-    所有参数由 Hydra 配置显式传入。
+    用户可调参数由 Hydra 配置显式传入。
     debug_dir 非空时，每步结果即时保存为 PNG。
     """
 
@@ -510,12 +479,6 @@ def perceive(
         foreground,
         requested_groups=requested_groups,
         chroma_floor=chroma_floor,
-        merge_angle_degrees=merge_angle_degrees,
-        minimum_lightness=minimum_lightness,
-        minimum_fit_pixels=minimum_fit_pixels,
-        maximum_fit_pixels=maximum_fit_pixels,
-        random_seed=random_seed,
-        spherical_kmeans_iterations=spherical_kmeans_iterations,
     )
     ramps_bgr, ramp_l = build_adaptive_ramps(
         lab=blocks_lab,
@@ -524,12 +487,6 @@ def perceive(
         hue_directions_ab=hue_directions_ab,
         steps=ramp_steps,
         minimum_span=ramp_minimum_span,
-        low_quantile=ramp_low_quantile,
-        high_quantile=ramp_high_quantile,
-        minimum_family_pixels=ramp_minimum_family_pixels,
-        chroma_quantile=ramp_chroma_quantile,
-        endpoint_chroma_scale=ramp_endpoint_chroma_scale,
-        maximum_chroma=ramp_maximum_chroma,
     )
     if palette_bgr is not None:
         ramps_bgr = fit_ramps_to_palette(ramps_bgr, palette_bgr)
