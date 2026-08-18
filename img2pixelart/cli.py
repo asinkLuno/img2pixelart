@@ -228,7 +228,7 @@ def crop_padding(img_path: Path) -> None:
     y_min, y_max = np.where(rows)[0][[0, -1]]
     x_min, x_max = np.where(cols)[0][[0, -1]]
 
-    margin = min(h, w) // 20
+    margin = max(2, min(h, w) // 20)
     y_min = max(0, int(y_min) - margin)
     y_max = min(h, int(y_max) + margin)
     x_min = max(0, int(x_min) - margin)

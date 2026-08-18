@@ -21,7 +21,7 @@ uv pip install hydra-joblib-launcher
 ### 单张转换
 
 ```bash
-uv run img2pixelart img=tests/apple.jpg width=96 height=96
+uv run img2pixelart img=tests/cup.png width=96 height=96
 ```
 
 输出在当前目录的 `result.png`。
@@ -29,7 +29,7 @@ uv run img2pixelart img=tests/apple.jpg width=96 height=96
 ### 图片转 ASCII 字符画
 
 ```bash
-uv run img2pixelart ascii img=tests/apple.jpg ascii.rows=60
+uv run img2pixelart ascii img=tests/cup.png ascii.rows=60
 # → outputs/single/<ts>/result_ascii.txt
 ```
 
@@ -44,8 +44,8 @@ Zhang-Suen 细化，照片走双边滤波 Canny 后细化；每个字符格用 S
 去掉图片四周空白区域：
 
 ```bash
-uv run img2pixelart crop-padding tests/apple.jpg
-# → tests/apple_no_padding.jpg
+uv run img2pixelart crop-padding tests/cup.png
+# → tests/cup_no_padding.png
 ```
 
 ### 参数扫网（multirun）
@@ -55,7 +55,7 @@ uv run img2pixelart crop-padding tests/apple.jpg
 ```bash
 # 渐变层次 × 抖动风格 × 描边，81 种组合
 uv run img2pixelart -m \
-  img=tests/apple.jpg \
+  img=tests/cup.png \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
@@ -69,7 +69,7 @@ uv run img2pixelart -m \
 
 ```bash
 uv run img2pixelart -m \
-  img=tests/apple.jpg \
+  img=tests/cup.png \
   perceive.ramp_steps=5,7,9 \
   render.silhouette_dark_step=0,1,2 \
   render.internal_outline_dark_steps=0,1,2 \
