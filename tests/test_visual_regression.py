@@ -23,14 +23,21 @@ def test_baseline_inputs_and_matrix_are_versioned() -> None:
 def test_experiments_cover_issue_candidates() -> None:
     assert set(EXPERIMENTS) == {"ab-2", "ab-3"}
     assert EXPERIMENTS["ab-2"][1].patch == "skip-bilateral"
-    assert EXPERIMENTS["ab-3"][1].patch == "otsu-canny"
+    # AB-3 已落地为默认（Otsu 自适应），A 侧用补丁回退到固定阈值。
+    assert EXPERIMENTS["ab-3"][0].patch == "fixed-canny"
+    assert EXPERIMENTS["ab-3"][1].patch is None
 
 
 def test_temporary_candidates_patch_only_copied_package(tmp_path: Path) -> None:
     perceive = tmp_path / "perceive.py"
     original = (
-        "denoised = cv2.bilateralFilter(bgr, denoise_d, denoise_sigma, denoise_sigma)\n"
-        "canny = cv2.Canny(gray, canny_low, canny_high)\n"
+        "    denoised = cv2.bilateralFilter("
+        "bgr, denoise_d, denoise_sigma, denoise_sigma)\n"
+        "    canny = cv2.Canny(\n"
+        "        gray,\n"
+        "        max(float(otsu) * _CANNY_LOW_RATIO, _CANNY_LOW_FLOOR),\n"
+        "        float(otsu),\n"
+        "    )\n"
     )
     perceive.write_text(original, encoding="utf-8")
 
@@ -38,10 +45,9 @@ def test_temporary_candidates_patch_only_copied_package(tmp_path: Path) -> None:
     assert "denoised = bgr.copy()" in perceive.read_text(encoding="utf-8")
 
     perceive.write_text(original, encoding="utf-8")
-    _apply_patch(tmp_path, "otsu-canny")
+    _apply_patch(tmp_path, "fixed-canny")
     patched = perceive.read_text(encoding="utf-8")
-    assert "cv2.THRESH_BINARY + cv2.THRESH_OTSU" in patched
-    assert "max(float(otsu) * 0.33, 10.0)" in patched
+    assert "canny = cv2.Canny(gray, 40, 120)" in patched
 
 
 def test_image_metrics_and_sheet_include_alpha(tmp_path: Path) -> None:

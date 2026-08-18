@@ -119,8 +119,9 @@ uv run python tools/visual_regression.py ab-3  # fixed Canny vs ratio×Otsu Cann
 ```
 
 AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并（bayer 并入
-`ordered`），实验随其归档，不再包含在 runner 中。其余 B 侧在临时包副本中应用严格
-的实验补丁，不修改工作树；若目标实现移动，补丁会显式失败而不是悄悄比较了错误的算法。
+`ordered`），实验随其归档，不再包含在 runner 中。其余实验的变体侧（非现状一侧）在
+临时包副本中应用严格的实验补丁，不修改工作树；若目标实现移动，补丁会显式失败而不是
+悄悄比较了错误的算法。
 评审时打开 `comparison.png`，再读取 `metrics.json` 的逐像素差异比例、平均通道差异和
 `05_palette` / `22_palette_strip` 一致性。数值用于定位差异，结论仍以 **B 相对 A 没有
 可感知质量回退** 的人工评审为准；将 `AB-N: 结论 / 倾向 / 证据（输出路径或贴图）`
@@ -155,5 +156,6 @@ AB-1（bayer vs pattern/ordered）已在 issue #1 中得出结论并完成合并
 | `render.silhouette_dark_step` + `silhouette_dark_scale` | `render.silhouette_darkness`（默认 1.0 = 原 step=0, scale=0.75） |
 | `render.internal_outline_dark_steps` + `internal_outline_dark_scale` | `render.internal_darkness`（默认 1.0 = 原 steps=2, scale=0.6） |
 | `perceive.alpha_threshold` / `ascii.alpha_threshold` | 顶层 `alpha_threshold` |
+| `perceive.canny_low` / `perceive.canny_high` | Otsu 自适应（内部常量 `max(Otsu×0.33, 10)` / `Otsu`，与 ascii 策略一致） |
 | `ascii.alpha_coverage` | `ascii.subject_coverage` |
 | `ascii.bilateral_d` / `bilateral_sigma_color` / `bilateral_sigma_space` | `ascii.denoise_strength`（默认 1.0 = 原 9 / 75 / 75） |
