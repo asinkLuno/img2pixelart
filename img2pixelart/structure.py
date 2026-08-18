@@ -1,9 +1,7 @@
-"""结构阶段：全分辨率信息降采样到目标网格，推导轮廓与内部细节。
-
-所有可配置参数由 Hydra 配置显式传入，本模块不设代码默认值。
-"""
+"""结构阶段：全分辨率信息降采样到目标网格，推导轮廓与内部细节。"""
 
 from pathlib import Path
+from typing import Final
 
 import cv2
 import numpy as np
@@ -12,6 +10,8 @@ from numpy.typing import NDArray
 FloatArray = NDArray[np.float32]
 BoolArray = NDArray[np.bool_]
 LabelArray = NDArray[np.int16]
+
+_SMALL_DETAIL_MIN_LENGTH: Final = 4
 
 
 # ---------------------------------------------------------------------------
@@ -362,14 +362,11 @@ def _simplify_small_sprite(
     width: int,
     height: int,
     small_cleanup_threshold: int,
-    small_hole_close: bool,
     small_cleanup_passes: int,
     small_tier_smooth_majority: int,
     small_skip_canny_under: int,
     edge_canny_support_radius: int,
     edge_min_length: int,
-    small_detail_min_length: int,
-    edge_open_before_thin: bool,
 ) -> dict:
     """小尺寸精灵的语义清理通道。
 
@@ -392,9 +389,7 @@ def _simplify_small_sprite(
         }
 
     # 闭合小孔并去掉过小的孤立连通块
-    alpha = alpha_down.copy()
-    if small_hole_close:
-        alpha = bool_close(alpha, 1)
+    alpha = bool_close(alpha_down, 1)
     alpha = _largest_reasonable_components(alpha, max(0.001, 2.0 / alpha.size))
 
     family = repair_missing_family(family_down.copy(), alpha)
@@ -432,10 +427,9 @@ def _simplify_small_sprite(
     internal_detail = (
         (family_boundary | (canny & support)) & alpha & ~shade_boundary & ~silhouette
     )
-    min_len = max(edge_min_length, small_detail_min_length)
-    internal_detail = remove_short_components(internal_detail, min_len)
-    if edge_open_before_thin:
-        internal_detail = bool_open(internal_detail, 1)
+    internal_detail = remove_short_components(
+        internal_detail, max(edge_min_length, _SMALL_DETAIL_MIN_LENGTH)
+    )
     internal_detail = thin(internal_detail)
 
     return {
@@ -466,11 +460,8 @@ def structure(
     edge_coverage: float,
     edge_min_length: int,
     edge_canny_support_radius: int,
-    edge_open_before_thin: bool,
     small_cleanup_threshold: int,
-    small_detail_min_length: int,
     small_cleanup_passes: int,
-    small_hole_close: bool,
     small_tier_smooth_majority: int,
     small_skip_canny_under: int,
     debug_dir: Path,
@@ -522,8 +513,6 @@ def structure(
         & ~silhouette
     )
     internal_detail = remove_short_components(internal_detail, edge_min_length)
-    if edge_open_before_thin:
-        internal_detail = bool_open(internal_detail, 1)
     internal_detail = thin(internal_detail)
     outline = silhouette | internal_detail
 
@@ -544,14 +533,11 @@ def structure(
         width=width,
         height=height,
         small_cleanup_threshold=small_cleanup_threshold,
-        small_hole_close=small_hole_close,
         small_cleanup_passes=small_cleanup_passes,
         small_tier_smooth_majority=small_tier_smooth_majority,
         small_skip_canny_under=small_skip_canny_under,
         edge_canny_support_radius=edge_canny_support_radius,
         edge_min_length=edge_min_length,
-        small_detail_min_length=small_detail_min_length,
-        edge_open_before_thin=edge_open_before_thin,
     )
 
     return {

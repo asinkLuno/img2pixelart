@@ -4,21 +4,13 @@ rows: 60
 # 主体遮罩：源图 alpha >= alpha_threshold 视为前景，字符格前景覆盖率 >= alpha_coverage 才保留
 alpha_threshold: 128
 alpha_coverage: 0.5
-# 线条画判定：亮背景占比 > line_art_white_ratio 且平均饱和度 < line_art_max_saturation
+# 线条画判定的亮背景占比
 line_art_white_ratio: 0.5
-line_art_max_saturation: 30.0
 # 照片边缘：双边滤波参数
 bilateral_d: 9
 bilateral_sigma_color: 75.0
 bilateral_sigma_space: 75.0
-# Canny 低阈值 = Otsu * canny_low_ratio，且不低于 canny_low_floor；高阈值 = Otsu
+# Canny 低阈值 = Otsu * canny_low_ratio；高阈值 = Otsu
 canny_low_ratio: 0.33
-canny_low_floor: 10.0
-# Lab 色彩梯度：主体内 color_edge_quantile 分位数归一化后用 Otsu 提取内部轮廓
-color_edge_quantile: 0.99
-# Sobel 方向计算前对边缘图做高斯模糊的 sigma
-edge_blur_sigma: 2.0
-# 字符格边缘密度 → 线宽档位的分界（细化后单像素边缘密度约为 1.99）
-intensity_breaks: [1.0, 12.0, 45.0, 110.0]
 # 线段合并：同方向字符间允许填补的最大空格数
 merge_max_gap: 2

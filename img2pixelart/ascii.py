@@ -3,10 +3,10 @@
 移植自 gEInk 的 art/ascii.py，并复用本仓 structure 阶段的算法：
 骨架细化用 :func:`img2pixelart.structure.thin`（替代 skimage 骨架化），
 主体遮罩用源图 alpha 通道降采样（替代 gEInk 的 SAM 分割）。
-所有可配置参数由 Hydra 配置显式传入，本模块不设代码层默认值。
 """
 
 from pathlib import Path
+from typing import Final
 
 import cv2
 import numpy as np
@@ -16,6 +16,12 @@ from .structure import down_mask, thin
 # 半角等宽字符栅格比例 2:1（终端字符几何常量，非调参项）
 CELL_H = 16
 CELL_W = 8
+
+_LINE_ART_MAX_SATURATION: Final = 30.0
+_CANNY_LOW_FLOOR: Final = 10.0
+_COLOR_EDGE_QUANTILE: Final = 0.99
+_EDGE_BLUR_SIGMA: Final = 2.0
+_INTENSITY_BREAKS: Final = (1.0, 12.0, 45.0, 110.0)
 
 # direction index → chars at intensity 0..4
 # 0: horizontal, 1: vertical, 2: right diagonal (/), 3: left diagonal (\)
@@ -70,8 +76,6 @@ def _photo_edges(
     bilateral_sigma_color: float,
     bilateral_sigma_space: float,
     canny_low_ratio: float,
-    canny_low_floor: float,
-    color_edge_quantile: float,
 ) -> np.ndarray:
     """照片边缘：亮度 Canny 与 Lab 色彩梯度合并后细化。
 
@@ -86,7 +90,7 @@ def _photo_edges(
     otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     luma_edges = cv2.Canny(
         gray,
-        max(float(otsu) * canny_low_ratio, canny_low_floor),
+        max(float(otsu) * canny_low_ratio, _CANNY_LOW_FLOOR),
         float(otsu),
     )
 
@@ -94,7 +98,7 @@ def _photo_edges(
     grad_x = cv2.Sobel(lab, cv2.CV_32F, 1, 0, ksize=3)
     grad_y = cv2.Sobel(lab, cv2.CV_32F, 0, 1, ksize=3)
     color_magnitude = np.sqrt(np.sum(grad_x**2 + grad_y**2, axis=2))
-    scale = float(np.quantile(color_magnitude[foreground], color_edge_quantile))
+    scale = float(np.quantile(color_magnitude[foreground], _COLOR_EDGE_QUANTILE))
     if scale > 0:
         normalized_color = np.clip(color_magnitude * 255.0 / scale, 0, 255).astype(
             np.uint8
@@ -128,7 +132,7 @@ def _photo_edges(
 # ---------------------------------------------------------------------------
 
 
-def _density_to_intensity(density: float, breaks: list[float]) -> int:
+def _density_to_intensity(density: float, breaks: tuple[float, ...]) -> int:
     """边缘像素密度 → 强度档位（0..len(breaks)）。"""
     for i, threshold in enumerate(breaks):
         if density < threshold:
@@ -153,7 +157,7 @@ def _classify_edge_cell(
     cell_gx: np.ndarray,
     cell_gy: np.ndarray,
     edge_density: float,
-    breaks: list[float],
+    breaks: tuple[float, ...],
 ) -> str:
     """把单个字符格的梯度数据与边缘密度映射为 _EDGE_CHARS_TABLE 中的一个字符。"""
     intensity = _density_to_intensity(edge_density, breaks)
@@ -289,15 +293,10 @@ def generate_ascii_art(
     alpha_threshold: int,
     alpha_coverage: float,
     line_art_white_ratio: float,
-    line_art_max_saturation: float,
     bilateral_d: int,
     bilateral_sigma_color: float,
     bilateral_sigma_space: float,
     canny_low_ratio: float,
-    canny_low_floor: float,
-    color_edge_quantile: float,
-    edge_blur_sigma: float,
-    intensity_breaks: list[float],
     merge_max_gap: int,
     debug_dir: Path,
 ) -> list[str]:
@@ -346,7 +345,7 @@ def generate_ascii_art(
     _save("ascii_gray", gray)
     _save("ascii_subject", foreground)
 
-    if _is_line_art(bgr, line_art_white_ratio, line_art_max_saturation):
+    if _is_line_art(bgr, line_art_white_ratio, _LINE_ART_MAX_SATURATION):
         edges = _line_art_edges(gray, grid_h, grid_w)
     else:
         edges = _photo_edges(
@@ -358,15 +357,13 @@ def generate_ascii_art(
             bilateral_sigma_color,
             bilateral_sigma_space,
             canny_low_ratio,
-            canny_low_floor,
-            color_edge_quantile,
         )
     _save("ascii_edges", edges)
 
     # 边缘图先高斯模糊再做 Sobel，让梯度方向来自边缘几何而非图像纹理，
     # 避免纹理区域的角度误判
     edge_blur = cv2.GaussianBlur(
-        edges.astype(np.float32), (0, 0), sigmaX=edge_blur_sigma
+        edges.astype(np.float32), (0, 0), sigmaX=_EDGE_BLUR_SIGMA
     )
     gx = cv2.Sobel(edge_blur, cv2.CV_64F, 1, 0, ksize=3)
     gy = cv2.Sobel(edge_blur, cv2.CV_64F, 0, 1, ksize=3)
@@ -380,7 +377,7 @@ def generate_ascii_art(
             x0, x1 = col * CELL_W, (col + 1) * CELL_W
             density = float(edges[y0:y1, x0:x1].mean())
             char = _classify_edge_cell(
-                gx[y0:y1, x0:x1], gy[y0:y1, x0:x1], density, intensity_breaks
+                gx[y0:y1, x0:x1], gy[y0:y1, x0:x1], density, _INTENSITY_BREAKS
             )
             row_chars.append(char)
         lines.append("".join(row_chars))

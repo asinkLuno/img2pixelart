@@ -4,10 +4,7 @@ alpha_coverage: 0.16
 edge_coverage: 0.03
 edge_min_length: 2
 edge_canny_support_radius: 6
-edge_open_before_thin: false
 small_cleanup_threshold: 64
-small_detail_min_length: 4
 small_cleanup_passes: 2
-small_hole_close: true
 small_tier_smooth_majority: 5
 small_skip_canny_under: 40

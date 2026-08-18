@@ -46,16 +46,8 @@ NUMERIC_LIMITS: dict[str, tuple[float, float]] = {
     "perceive.mean_shift_sr": (0.000001, 1_000_000),
     "perceive.requested_groups": (1, 1_000_000),
     "perceive.chroma_floor": (0, 1_000_000),
-    "perceive.minimum_fit_pixels": (1, 1_000_000),
-    "perceive.spherical_kmeans_iterations": (1, 1_000_000),
     "perceive.ramp_steps": (3, 1_000_000),
     "perceive.ramp_minimum_span": (0, 100),
-    "perceive.ramp_low_quantile": (0, 1),
-    "perceive.ramp_high_quantile": (0, 1),
-    "perceive.ramp_minimum_family_pixels": (1, 1_000_000),
-    "perceive.ramp_chroma_quantile": (0, 1),
-    "perceive.ramp_endpoint_chroma_scale": (0, 1),
-    "perceive.ramp_maximum_chroma": (0.000001, 1_000_000),
     "perceive.canny_low": (0, 1_000_000),
     "perceive.canny_high": (0, 1_000_000),
     "perceive.alpha_threshold": (0, 255),
@@ -285,10 +277,6 @@ class MainWindow(QMainWindow):
         except ValueError as error:
             message = str(error)
             invalid = {path for path in self.controls if path in message}
-            if "perceive ramp 分位" in message:
-                invalid.update(
-                    ("perceive.ramp_low_quantile", "perceive.ramp_high_quantile")
-                )
             if "render dither 分位" in message:
                 invalid.update(
                     ("render.dither_fraction_min", "render.dither_fraction_max")
